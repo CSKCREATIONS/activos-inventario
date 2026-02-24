@@ -1,6 +1,7 @@
 // VIEW: Página Asignaciones
 import { useState } from 'react';
 import { useAsignacionesController } from '../../../controllers/useAsignacionesController';
+
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
@@ -101,7 +102,7 @@ export function AsignacionesPage() {
                         variant="outline"
                         size="sm"
                         icon={<RotateCcw size={12} />}
-                        onClick={() => ctrl.registrarDevolucion(a.id, a.equipo_id)}
+                        onClick={() => ctrl.registrarDevolucion(a.id)}
                       >
                         Devolver
                       </Button>

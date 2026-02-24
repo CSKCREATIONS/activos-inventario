@@ -1,20 +1,48 @@
 // CONTROLLER: Dashboard
-// Lógica de negocio para calcular KPIs y datos de las gráficas del dashboard.
-// La vista solo consume lo que este hook expone.
+// Carga todos los datos desde la API REST y calcula KPIs y gráficas.
 
-import { useMemo } from 'react';
+import { useMemo, useEffect, useCallback, useState } from 'react';
 import { useEquiposStore } from '../models/stores/useEquiposStore';
 import { useAsignacionesStore } from '../models/stores/useAsignacionesStore';
 import { useUsuariosStore } from '../models/stores/useUsuariosStore';
 import { useDocumentosStore } from '../models/stores/useAccesoriosStore';
+import { equiposApi, asignacionesApi, usuariosApi, documentosApi } from '../services/api';
 import type { DashboardStats } from '../models/types/index';
 
 export function useDashboardController() {
-  const equipos = useEquiposStore((s) => s.equipos);
-  const asignaciones = useAsignacionesStore((s) => s.asignaciones);
-  const usuarios = useUsuariosStore((s) => s.usuarios);
-  const documentos = useDocumentosStore((s) => s.documentos);
+  const { equipos, setEquipos } = useEquiposStore();
+  const { asignaciones, setAsignaciones } = useAsignacionesStore();
+  const { usuarios, setUsuarios } = useUsuariosStore();
+  const { documentos, setDocumentos } = useDocumentosStore();
 
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ── Carga inicial de todos los datos ──────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [eqRes, asigRes, usrRes, docRes] = await Promise.all([
+        equiposApi.getAll(),
+        asignacionesApi.getAll(),
+        usuariosApi.getAll(),
+        documentosApi.getAll(),
+      ]);
+      setEquipos(eqRes.data);
+      setAsignaciones(asigRes.data);
+      setUsuarios(usrRes.data);
+      setDocumentos(docRes.data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al cargar datos del dashboard.');
+    } finally {
+      setLoading(false);
+    }
+  }, [setEquipos, setAsignaciones, setUsuarios, setDocumentos]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── KPIs ─────────────────────────────────────────────────────────────────
   const stats: DashboardStats = useMemo(() => {
     const equiposConActa = new Set(documentos.filter((d) => d.tipo === 'Acta').map((d) => d.equipo_id));
     const equiposConHv = new Set(documentos.filter((d) => d.tipo === 'Hoja de vida').map((d) => d.equipo_id));
@@ -30,7 +58,6 @@ export function useDashboardController() {
     };
   }, [equipos, documentos]);
 
-  // Datos para gráfica: distribución por área (basada en asignaciones activas)
   const datosPorArea = useMemo(() => {
     const mapa: Record<string, number> = {};
     asignaciones
@@ -43,7 +70,6 @@ export function useDashboardController() {
     return Object.entries(mapa).map(([name, value]) => ({ name, value }));
   }, [asignaciones, usuarios]);
 
-  // Datos para gráfica: distribución por criticidad
   const datosPorCriticidad = useMemo(() => {
     const mapa: Record<string, number> = {};
     equipos.filter((e) => e.estado !== 'Baja').forEach((e) => {
@@ -52,7 +78,6 @@ export function useDashboardController() {
     return Object.entries(mapa).map(([name, value]) => ({ name, value }));
   }, [equipos]);
 
-  // Datos para gráfica: distribución por sistema operativo
   const datosPorSO = useMemo(() => {
     const mapa: Record<string, number> = {};
     equipos.filter((e) => e.sistema_operativo && e.estado !== 'Baja').forEach((e) => {
@@ -62,7 +87,6 @@ export function useDashboardController() {
     return Object.entries(mapa).map(([name, value]) => ({ name, value }));
   }, [equipos]);
 
-  // Datos para gráfica: distribución por estado
   const datosPorEstado = useMemo(() => {
     const mapa: Record<string, number> = {};
     equipos.forEach((e) => {
@@ -71,7 +95,6 @@ export function useDashboardController() {
     return Object.entries(mapa).map(([name, value]) => ({ name, value }));
   }, [equipos]);
 
-  // Alertas
   const alertas = useMemo(() => {
     const list: { tipo: 'error' | 'warning' | 'info'; mensaje: string }[] = [];
     if (stats.equipos_sin_acta > 0)
@@ -88,5 +111,5 @@ export function useDashboardController() {
     return list;
   }, [stats, equipos, asignaciones]);
 
-  return { stats, datosPorArea, datosPorCriticidad, datosPorSO, datosPorEstado, alertas };
+  return { stats, datosPorArea, datosPorCriticidad, datosPorSO, datosPorEstado, alertas, loading, error };
 }

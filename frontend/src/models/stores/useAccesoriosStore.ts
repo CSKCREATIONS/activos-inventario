@@ -1,16 +1,17 @@
 import { create } from 'zustand';
 import type { Accesorio, Documento } from '../types/index';
-import { mockAccesorios, mockDocumentos } from '../data/mockData';
 
 interface AccesoriosState {
   accesorios: Accesorio[];
+  setAccesorios: (accesorios: Accesorio[]) => void;
   addAccesorio: (a: Accesorio) => void;
   updateAccesorio: (id: string, data: Partial<Accesorio>) => void;
   deleteAccesorio: (id: string) => void;
 }
 
 export const useAccesoriosStore = create<AccesoriosState>((set) => ({
-  accesorios: mockAccesorios,
+  accesorios: [],
+  setAccesorios: (accesorios) => set({ accesorios }),
   addAccesorio: (a) => set((s) => ({ accesorios: [...s.accesorios, a] })),
   updateAccesorio: (id, data) =>
     set((s) => ({ accesorios: s.accesorios.map((a) => (a.id === id ? { ...a, ...data } : a)) })),
@@ -20,12 +21,14 @@ export const useAccesoriosStore = create<AccesoriosState>((set) => ({
 
 interface DocumentosState {
   documentos: Documento[];
+  setDocumentos: (documentos: Documento[]) => void;
   addDocumento: (d: Documento) => void;
   deleteDocumento: (id: string) => void;
 }
 
 export const useDocumentosStore = create<DocumentosState>((set) => ({
-  documentos: mockDocumentos,
+  documentos: [],
+  setDocumentos: (documentos) => set({ documentos }),
   addDocumento: (d) => set((s) => ({ documentos: [...s.documentos, d] })),
   deleteDocumento: (id) =>
     set((s) => ({ documentos: s.documentos.filter((d) => d.id !== id) })),

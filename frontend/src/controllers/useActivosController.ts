@@ -1,12 +1,12 @@
 // CONTROLLER: Activos (Equipos)
-// Lógica de filtrado, búsqueda y CRUD de equipos.
+// Lógica de filtrado, búsqueda y CRUD de equipos — datos desde la API REST.
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useEquiposStore } from '../models/stores/useEquiposStore';
 import { useAsignacionesStore } from '../models/stores/useAsignacionesStore';
 import { useUsuariosStore } from '../models/stores/useUsuariosStore';
+import { equiposApi, asignacionesApi, usuariosApi } from '../services/api';
 import type { Equipo, EstadoEquipo, Criticidad, TipoEquipo } from '../models/types/index';
-import { v4 as uuidv4 } from 'uuid';
 
 export interface FiltrosEquipos {
   busqueda: string;
@@ -17,10 +17,10 @@ export interface FiltrosEquipos {
 }
 
 export function useActivosController() {
-  const { equipos, addEquipo, updateEquipo, deleteEquipo, selectedEquipo, setSelectedEquipo } =
+  const { equipos, setEquipos, updateEquipo, deleteEquipo, selectedEquipo, setSelectedEquipo } =
     useEquiposStore();
-  const asignaciones = useAsignacionesStore((s) => s.asignaciones);
-  const usuarios = useUsuariosStore((s) => s.usuarios);
+  const { asignaciones, setAsignaciones } = useAsignacionesStore();
+  const { usuarios, setUsuarios } = useUsuariosStore();
 
   const [filtros, setFiltros] = useState<FiltrosEquipos>({
     busqueda: '',
@@ -32,7 +32,32 @@ export function useActivosController() {
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modoEdicion, setModoEdicion] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  // ── Carga inicial desde la API ──────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [eqRes, asigRes, usrRes] = await Promise.all([
+        equiposApi.getAll(),
+        asignacionesApi.getAll(),
+        usuariosApi.getAll(),
+      ]);
+      setEquipos(eqRes.data);
+      setAsignaciones(asigRes.data);
+      setUsuarios(usrRes.data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al cargar equipos.');
+    } finally {
+      setLoading(false);
+    }
+  }, [setEquipos, setAsignaciones, setUsuarios]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── Filtrado local ───────────────────────────────────────────────────────────
   const equiposFiltrados = useMemo(() => {
     return equipos.filter((e) => {
       const b = filtros.busqueda.toLowerCase();
@@ -68,20 +93,35 @@ export function useActivosController() {
       .sort((a, b) => b.fecha_asignacion.localeCompare(a.fecha_asignacion));
   };
 
-  const crearEquipo = (data: Omit<Equipo, 'id' | 'fecha_registro'>) => {
-    const nuevoEquipo: Equipo = {
-      ...data,
-      id: uuidv4(),
-      fecha_registro: new Date().toISOString().split('T')[0],
-    };
-    addEquipo(nuevoEquipo);
-    setModalAbierto(false);
+  // ── CRUD con API ─────────────────────────────────────────────────────────────
+  const crearEquipo = async (data: Omit<Equipo, 'id' | 'fecha_registro'>) => {
+    try {
+      const res = await equiposApi.create(data);
+      setEquipos([...equipos, res.data]);
+      setModalAbierto(false);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al crear equipo.');
+    }
   };
 
-  const editarEquipo = (id: string, data: Partial<Equipo>) => {
-    updateEquipo(id, data);
-    setModalAbierto(false);
-    setModoEdicion(false);
+  const editarEquipo = async (id: string, data: Partial<Equipo>) => {
+    try {
+      const res = await equiposApi.update(id, data);
+      updateEquipo(id, res.data);
+      setModalAbierto(false);
+      setModoEdicion(false);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al actualizar equipo.');
+    }
+  };
+
+  const eliminarEquipo = async (id: string) => {
+    try {
+      await equiposApi.remove(id);
+      deleteEquipo(id);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al eliminar equipo.');
+    }
   };
 
   const abrirCrear = () => {
@@ -115,8 +155,11 @@ export function useActivosController() {
     cerrarModal,
     crearEquipo,
     editarEquipo,
-    deleteEquipo,
+    deleteEquipo: eliminarEquipo,
     getResponsableActual,
     getHistorialEquipo,
+    loading,
+    error,
+    refetch: fetchData,
   };
 }

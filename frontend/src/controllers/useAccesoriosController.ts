@@ -1,19 +1,42 @@
-// CONTROLLER: Accesorios
-import { useState, useMemo } from 'react';
+// CONTROLLER: Accesorios — datos desde la API REST.
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useAccesoriosStore } from '../models/stores/useAccesoriosStore';
 import { useEquiposStore } from '../models/stores/useEquiposStore';
+import { accesoriosApi, equiposApi } from '../services/api';
 import type { Accesorio } from '../models/types/index';
-import { v4 as uuidv4 } from 'uuid';
 
 export function useAccesoriosController() {
-  const { accesorios, addAccesorio, updateAccesorio, deleteAccesorio } = useAccesoriosStore();
-  const equipos = useEquiposStore((s) => s.equipos);
+  const { accesorios, setAccesorios, updateAccesorio, deleteAccesorio } = useAccesoriosStore();
+  const { equipos, setEquipos } = useEquiposStore();
 
   const [busqueda, setBusqueda] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
   const [modalAbierto, setModalAbierto] = useState(false);
   const [selected, setSelected] = useState<Accesorio | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  // ── Carga inicial ──────────────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [accRes, eqRes] = await Promise.all([
+        accesoriosApi.getAll(),
+        equiposApi.getAll(),
+      ]);
+      setAccesorios(accRes.data);
+      setEquipos(eqRes.data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al cargar accesorios.');
+    } finally {
+      setLoading(false);
+    }
+  }, [setAccesorios, setEquipos]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── Filtrado local ─────────────────────────────────────────────────────────
   const accesoriosFiltrados = useMemo(() => {
     return accesorios.filter((a) => {
       const b = busqueda.toLowerCase();
@@ -32,14 +55,34 @@ export function useAccesoriosController() {
     }));
   }, [accesoriosFiltrados, equipos]);
 
-  const crear = (data: Omit<Accesorio, 'id' | 'fecha_registro'>) => {
-    addAccesorio({ ...data, id: uuidv4(), fecha_registro: new Date().toISOString().split('T')[0] });
-    setModalAbierto(false);
+  // ── CRUD con API ───────────────────────────────────────────────────────────
+  const crear = async (data: Omit<Accesorio, 'id' | 'fecha_registro'>) => {
+    try {
+      const res = await accesoriosApi.create(data);
+      setAccesorios([...accesorios, res.data]);
+      setModalAbierto(false);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al crear accesorio.');
+    }
   };
 
-  const editar = (id: string, data: Partial<Accesorio>) => {
-    updateAccesorio(id, data);
-    setModalAbierto(false);
+  const editar = async (id: string, data: Partial<Accesorio>) => {
+    try {
+      const res = await accesoriosApi.update(id, data);
+      updateAccesorio(id, res.data);
+      setModalAbierto(false);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al actualizar accesorio.');
+    }
+  };
+
+  const eliminar = async (id: string) => {
+    try {
+      await accesoriosApi.remove(id);
+      deleteAccesorio(id);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al eliminar accesorio.');
+    }
   };
 
   return {
@@ -49,6 +92,9 @@ export function useAccesoriosController() {
     modalAbierto, setModalAbierto,
     selected, setSelected,
     equipos,
-    crear, editar, deleteAccesorio,
+    crear, editar,
+    deleteAccesorio: eliminar,
+    loading, error,
+    refetch: fetchData,
   };
 }

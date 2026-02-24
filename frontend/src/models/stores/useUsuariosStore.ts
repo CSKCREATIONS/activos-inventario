@@ -1,10 +1,10 @@
 import { create } from 'zustand';
 import type { Usuario } from '../types/index';
-import { mockUsuarios } from '../data/mockData';
 
 interface UsuariosState {
   usuarios: Usuario[];
   selectedUsuario: Usuario | null;
+  setUsuarios: (usuarios: Usuario[]) => void;
   setSelectedUsuario: (u: Usuario | null) => void;
   addUsuario: (u: Usuario) => void;
   updateUsuario: (id: string, data: Partial<Usuario>) => void;
@@ -12,7 +12,8 @@ interface UsuariosState {
 }
 
 export const useUsuariosStore = create<UsuariosState>((set) => ({
-  usuarios: mockUsuarios,
+  usuarios: [],
+  setUsuarios: (usuarios) => set({ usuarios }),
   selectedUsuario: null,
   setSelectedUsuario: (u) => set({ selectedUsuario: u }),
   addUsuario: (u) => set((s) => ({ usuarios: [...s.usuarios, u] })),

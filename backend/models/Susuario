@@ -1,0 +1,14 @@
+// ...existing code...
+const pool = require('../config/db');
+
+async function createUsuarioSistema({ id, username, password_hash, rol, nombre, email, usuario_id }) {
+  const sql = `INSERT INTO usuarios_sistema
+    (id, username, password_hash, rol, nombre, email, usuario_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`;
+  const params = [id, username, password_hash, rol, nombre, email, usuario_id];
+  const [result] = await pool.execute(sql, params);
+  return result;
+}
+
+module.exports = { createUsuarioSistema };
+// ...existing code...
