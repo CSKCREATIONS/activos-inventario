@@ -7,9 +7,22 @@ import {
   Button, SearchInput, Table, Th, Td, EstadoBadge, CriticidadBadge,
   ConfidencialidadBadge, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
-import { Plus, Pencil, Eye, Laptop } from 'lucide-react';
+import { Plus, Pencil, Eye, Laptop, FileDown } from 'lucide-react';
 import type { Equipo, TipoEquipo, EstadoEquipo, Criticidad, Confidencialidad } from '../../../models/types/index';
 import { ActivoDetalle } from './ActivoDetalle';
+import { equiposApi } from '../../../services/api';
+
+const TIPOS_CON_HV: TipoEquipo[] = ['Laptop', 'Desktop'];
+
+async function descargarHojaVida(equipo: Equipo) {
+  const blob = await equiposApi.getHojaVidaPdf(equipo.id);
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `hoja_vida_${equipo.placa}.pdf`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 const TIPOS: TipoEquipo[] = ['Laptop','Desktop','Tablet','Impresora','Celular','Monitor','Servidor','Switch','Router','UPS','Otro'];
 const ESTADOS: EstadoEquipo[] = ['Disponible','Asignado','Dañado','Baja','En revisión','Rentado'];
@@ -105,6 +118,15 @@ export function ActivosPage() {
                     <div className="flex items-center gap-1">
                       <Button variant="ghost" size="sm" icon={<Eye size={14} />} onClick={() => setVistaDetalle(e.id)}>Ver</Button>
                       <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => handleAbrirEditar(e)}>Editar</Button>
+                      {TIPOS_CON_HV.includes(e.tipo_equipo) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={<FileDown size={14} />}
+                          onClick={() => descargarHojaVida(e).catch(console.error)}
+                          title="Descargar Hoja de Vida"
+                        >HV</Button>
+                      )}
                     </div>
                   </Td>
                 </tr>
@@ -142,6 +164,23 @@ export function ActivosPage() {
             <label htmlFor="rentado" className="text-sm font-medium text-slate-700">Equipo rentado</label>
           </div>
           <Field label="Observaciones" value={form.observaciones ?? ''} onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))} className="sm:col-span-2" />
+
+          {/* ── Campos Hoja de Vida (solo Laptop / Desktop) ── */}
+          {(form.tipo_equipo === 'Laptop' || form.tipo_equipo === 'Desktop') && (
+            <>
+              <div className="sm:col-span-2">
+                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide border-t border-blue-100 pt-3 mb-3">
+                  Datos para Hoja de Vida (F-TC-002)
+                </p>
+              </div>
+              <Field label="Procesador" value={form.procesador ?? ''} onChange={(e) => setForm((f) => ({ ...f, procesador: e.target.value }))} placeholder="Intel Core i5-1235U" />
+              <Field label="Nombre del equipo" value={form.nombre_equipo ?? ''} onChange={(e) => setForm((f) => ({ ...f, nombre_equipo: e.target.value }))} placeholder="EACUNTH1E" />
+              <Field label="Licenciamiento SO" value={form.licenciamiento_so ?? ''} onChange={(e) => setForm((f) => ({ ...f, licenciamiento_so: e.target.value }))} placeholder="NK4VW-BC8DQ-..." />
+              <Field label="Licenciamiento Office" value={form.licenciamiento_office ?? ''} onChange={(e) => setForm((f) => ({ ...f, licenciamiento_office: e.target.value }))} placeholder="VCQN6-62KYY-..." />
+              <Field label="Marca Monitor" value={form.marca_monitor ?? ''} onChange={(e) => setForm((f) => ({ ...f, marca_monitor: e.target.value }))} />
+              <Field label="Placa Monitor" value={form.placa_monitor ?? ''} onChange={(e) => setForm((f) => ({ ...f, placa_monitor: e.target.value }))} />
+            </>
+          )}
         </div>
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
           <Button variant="outline" onClick={ctrl.cerrarModal}>Cancelar</Button>

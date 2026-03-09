@@ -3,11 +3,13 @@
 // - Tablet (md–lg): colapsado por defecto (solo íconos)
 // - Desktop (lg+): expandido por defecto con opción de colapsar
 
-import { NavLink } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   LayoutDashboard, Monitor, Users, Link2, Package,
-  FileText, BarChart3, Settings, ChevronLeft, ChevronRight, Shield, X
+  FileText, BarChart3, Settings, ChevronLeft, ChevronRight, Shield, X,
+  FlaskConical, ChevronDown, Printer, Key, Cable,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -21,13 +23,46 @@ const NAV_ITEMS = [
   { to: '/administracion',label: 'Administración', icon: Settings },
 ];
 
+interface NavGroup {
+  key: string;
+  label: string;
+  icon: React.ElementType;
+  basePath: string;
+  children: { to: string; label: string; icon: React.ElementType }[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    key: 'suministros',
+    label: 'Suministros',
+    icon: FlaskConical,
+    basePath: '/suministros',
+    children: [
+      { to: '/suministros/toners',    label: 'Toners',    icon: Printer },
+      { to: '/suministros/licencias', label: 'Licencias', icon: Key    },
+      { to: '/suministros/cables',    label: 'Cables',    icon: Cable  },
+    ],
+  },
+];
+
 interface SidebarProps {
-  collapsed: boolean;
-  onToggle: () => void;
-  onMobileClose: () => void;
+  readonly collapsed: boolean;
+  readonly onToggle: () => void;
+  readonly onMobileClose: () => void;
 }
 
 export function Sidebar({ collapsed, onToggle, onMobileClose }: SidebarProps) {
+  const location = useLocation();
+
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(
+      NAV_GROUPS.map((g) => [g.key, location.pathname.startsWith(g.basePath)])
+    )
+  );
+
+  const toggleGroup = (key: string) =>
+    setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+
   return (
     <aside
       className={clsx(
@@ -80,6 +115,65 @@ export function Sidebar({ collapsed, onToggle, onMobileClose }: SidebarProps) {
             <span className={clsx('truncate', collapsed && 'lg:hidden')}>{label}</span>
           </NavLink>
         ))}
+
+        {/* Grupos desplegables */}
+        {NAV_GROUPS.map((group) => {
+          const GroupIcon = group.icon;
+          const isGroupActive = location.pathname.startsWith(group.basePath);
+          const isOpen = openGroups[group.key];
+          return (
+            <div key={group.key}>
+              <button
+                onClick={() => toggleGroup(group.key)}
+                className={clsx(
+                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  isGroupActive
+                    ? 'bg-slate-800 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800',
+                  collapsed && 'lg:justify-center lg:px-2'
+                )}
+              >
+                <GroupIcon size={18} className="shrink-0" />
+                <span className={clsx('flex-1 truncate text-left', collapsed && 'lg:hidden')}>
+                  {group.label}
+                </span>
+                <ChevronDown
+                  size={14}
+                  className={clsx(
+                    'shrink-0 transition-transform duration-200',
+                    collapsed && 'lg:hidden',
+                    isOpen && 'rotate-180'
+                  )}
+                />
+              </button>
+              <div
+                className={clsx(
+                  'overflow-hidden transition-all duration-200',
+                  collapsed ? 'lg:hidden' : '',
+                  isOpen ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
+                )}
+              >
+                {group.children.map(({ to, label, icon: ChildIcon }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    className={({ isActive }) =>
+                      clsx(
+                        'flex items-center gap-3 pl-9 pr-3 py-2 rounded-lg text-sm font-medium transition-colors mt-0.5',
+                        isActive
+                          ? 'bg-blue-600 text-white'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                      )
+                    }
+                  >
+                    <ChildIcon size={15} className="shrink-0" />
+                    <span className="truncate">{label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </nav>
 
       {/* Toggle colapsar — solo visible en desktop */}

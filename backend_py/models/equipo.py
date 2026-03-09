@@ -87,6 +87,9 @@ class EquipoModel:
             "serial", "marca", "modelo", "sistema_operativo", "version_so",
             "ram", "disco", "tecnologia", "fecha_compra", "proveedor",
             "costo", "observaciones",
+            # ── Hoja de Vida ──
+            "procesador", "nombre_equipo", "licenciamiento_so",
+            "licenciamiento_office", "marca_monitor", "placa_monitor",
         ]
         for key in optional:
             if data.get(key) is not None:
@@ -114,6 +117,9 @@ class EquipoModel:
             "placa", "serial", "tipo_equipo", "marca", "modelo", "sistema_operativo",
             "version_so", "ram", "disco", "tecnologia", "criticidad", "confidencialidad",
             "estado", "fecha_compra", "proveedor", "costo", "es_rentado", "observaciones",
+            # ── Hoja de Vida ──
+            "procesador", "nombre_equipo", "licenciamiento_so",
+            "licenciamiento_office", "marca_monitor", "placa_monitor",
         ]
         fields, values = [], []
         for key in allowed:

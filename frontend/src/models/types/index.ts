@@ -1,5 +1,8 @@
 // ─── ENUMS ────────────────────────────────────────────────────────────────────
 
+export type TipoSuministro = 'Toner' | 'Licencia' | 'Cable';
+export type EstadoSuministro = 'Disponible' | 'Agotado' | 'Reservado' | 'Baja';
+
 export type EstadoEquipo = 'Disponible' | 'Asignado' | 'Dañado' | 'Baja' | 'En revisión' | 'Rentado';
 export type Criticidad = 'Baja' | 'Media' | 'Alta' | 'Crítica';
 export type Confidencialidad = 'Pública' | 'Interna' | 'Confidencial' | 'Restringida';
@@ -45,6 +48,13 @@ export interface Equipo {
   costo?: number;
   es_rentado: boolean;
   observaciones?: string;
+  // ── Campos Hoja de Vida ──────────────────────────────
+  procesador?: string;
+  nombre_equipo?: string;
+  licenciamiento_so?: string;
+  licenciamiento_office?: string;
+  marca_monitor?: string;
+  placa_monitor?: string;
 }
 
 // ─── ASIGNACIÓN ───────────────────────────────────────────────────────────────
@@ -88,6 +98,23 @@ export interface Documento {
   version: number;
   fecha_carga: string;
   cargado_por?: string;
+}
+
+// ─── SUMINISTRO ──────────────────────────────────────────────────────────────
+
+export interface Suministro {
+  id: string;
+  nombre: string;
+  tipo: TipoSuministro;
+  referencia?: string;
+  marca?: string;
+  cantidad: number;
+  cantidad_minima: number;
+  estado: EstadoSuministro;
+  equipo_id?: string;
+  equipo_placa?: string;
+  observaciones?: string;
+  fecha_registro: string;
 }
 
 // ─── DASHBOARD KPIs ───────────────────────────────────────────────────────────

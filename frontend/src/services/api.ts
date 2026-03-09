@@ -2,20 +2,36 @@
 // Base URL: variable de entorno VITE_API_URL o fallback local
 
 import type {
-  Usuario, Equipo, Asignacion, Accesorio, Documento,
+  Usuario, Equipo, Asignacion, Accesorio, Documento, Suministro,
 } from '../models/types/index';
 
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001/api';
+const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api';
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
+function getAuthHeader(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem('itam-auth');
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as { state?: { token?: string } };
+    const token = parsed?.state?.token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options?.headers as Record<string, string>) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeader(),
+      ...(options?.headers as Record<string, string>),
+    },
     ...options,
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(json.message ?? `Error ${res.status}`);
+  if (!res.ok) throw new Error(json.detail ?? json.message ?? `Error ${res.status}`);
   return json;
 }
 
@@ -56,6 +72,15 @@ export const equiposApi = {
     request<{ data: Equipo }>(`/equipos/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   remove: (id: string) =>
     request<{ message: string }>(`/equipos/${id}`, { method: 'DELETE' }),
+  /** Genera y descarga la Hoja de Vida en PDF. Devuelve un Blob. */
+  getHojaVidaPdf: async (id: string): Promise<Blob> => {
+    const res = await fetch(`${BASE}/equipos/${id}/hoja-vida-pdf`);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error((j as { message?: string }).message ?? `Error ${res.status}`);
+    }
+    return res.blob();
+  },
 };
 
 // ─── Asignaciones ─────────────────────────────────────────────────────────────
@@ -109,4 +134,37 @@ export const documentosApi = {
 
 export const dashboardApi = {
   getStats: () => request<{ data: unknown }>('/dashboard'),
+};
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+import type { AuthUser } from '../models/stores/useAuthStore';
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  user: AuthUser;
+}
+
+export const authApi = {
+  login: (username: string, password: string) =>
+    request<LoginResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  me: () => request<{ user: AuthUser }>('/auth/me'),
+};
+
+// ─── Suministros ─────────────────────────────────────────────────────────────
+
+export const suministrosApi = {
+  getAll: (params?: { busqueda?: string; tipo?: string; estado?: string; equipo_id?: string }) =>
+    request<{ data: Suministro[]; total: number }>(buildUrl('/suministros', params)),
+  getById: (id: string) => request<{ data: Suministro }>(`/suministros/${id}`),
+  create: (body: Omit<Suministro, 'id' | 'fecha_registro' | 'equipo_placa'>) =>
+    request<{ data: Suministro }>('/suministros', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: string, body: Partial<Suministro>) =>
+    request<{ data: Suministro }>(`/suministros/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  remove: (id: string) =>
+    request<{ message: string }>(`/suministros/${id}`, { method: 'DELETE' }),
 };

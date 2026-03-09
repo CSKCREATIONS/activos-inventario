@@ -94,13 +94,15 @@ export function useActivosController() {
   };
 
   // ── CRUD con API ─────────────────────────────────────────────────────────────
-  const crearEquipo = async (data: Omit<Equipo, 'id' | 'fecha_registro'>) => {
+  const crearEquipo = async (data: Omit<Equipo, 'id' | 'fecha_registro'>): Promise<Equipo | null> => {
     try {
       const res = await equiposApi.create(data);
       setEquipos([...equipos, res.data]);
       setModalAbierto(false);
+      return res.data;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al crear equipo.');
+      return null;
     }
   };
 

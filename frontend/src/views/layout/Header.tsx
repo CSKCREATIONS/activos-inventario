@@ -1,5 +1,7 @@
 // VIEW: Header — responsive con hamburger para móvil
-import { Bell, User, Menu } from 'lucide-react';
+import { Bell, User, Menu, LogOut } from 'lucide-react';
+import { useAuthStore } from '../../models/stores/useAuthStore';
+import { useAuthController } from '../../controllers/useAuthController';
 
 interface HeaderProps {
   titulo: string;
@@ -8,6 +10,9 @@ interface HeaderProps {
 }
 
 export function Header({ titulo, subtitulo, onMenuClick }: HeaderProps) {
+  const authUser = useAuthStore((s) => s.user);
+  const { handleLogout } = useAuthController();
+
   return (
     <header className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 shrink-0 gap-3">
       <div className="flex items-center gap-3 min-w-0">
@@ -35,11 +40,20 @@ export function Header({ titulo, subtitulo, onMenuClick }: HeaderProps) {
             <User size={16} className="text-white" />
           </div>
           <div className="hidden md:block">
-            <p className="text-sm font-medium text-slate-700">Admin</p>
-            <p className="text-xs text-slate-400">Tecnología</p>
+            <p className="text-sm font-medium text-slate-700">{authUser?.nombre ?? 'Usuario'}</p>
+            <p className="text-xs text-slate-400 capitalize">{authUser?.rol ?? ''}</p>
           </div>
+          <button
+            onClick={handleLogout}
+            title="Cerrar sesión"
+            className="ml-1 p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            aria-label="Cerrar sesión"
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
     </header>
   );
 }
+
