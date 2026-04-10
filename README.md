@@ -14,3 +14,4 @@
 4. agregar la opción de suministros(toners, licencias, cables por el momento) al menu desplegable
 5. en el dashboard agregar una tarjeta de equipos rentados de la empresa ósea que son de la empresa y están rentados a otras personas y especificar lo de los equipos que tenemos en arriendo
 6. notificación de mantenimientos
+7. se necesita mejorar el archivo plano para migrar el inventario completo y sin errores, agregar en suministros: rollos de etiquetas y toners
