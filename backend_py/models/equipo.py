@@ -90,6 +90,8 @@ class EquipoModel:
             # ── Hoja de Vida ──
             "procesador", "nombre_equipo", "licenciamiento_so",
             "licenciamiento_office", "marca_monitor", "placa_monitor",
+            # ── Mantenimiento ──
+            "ultimo_mantenimiento",
         ]
         for key in optional:
             if data.get(key) is not None:
@@ -120,6 +122,8 @@ class EquipoModel:
             # ── Hoja de Vida ──
             "procesador", "nombre_equipo", "licenciamiento_so",
             "licenciamiento_office", "marca_monitor", "placa_monitor",
+            # ── Mantenimiento ──
+            "ultimo_mantenimiento",
         ]
         fields, values = [], []
         for key in allowed:

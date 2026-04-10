@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from config.db import test_connection, close_pool
-from routes import usuarios, equipos, asignaciones, accesorios, documentos, dashboard, susuarios, suministros, auth
+from routes import usuarios, equipos, asignaciones, accesorios, documentos, dashboard, susuarios, suministros, auth, licencias, importar
 
 load_dotenv()
 
@@ -46,6 +46,8 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"]
 app.include_router(auth.router,         prefix="/api/auth",        tags=["Auth"])
 app.include_router(susuarios.router,    prefix="/api/Susuarios",    tags=["UsuariosSistema"])
 app.include_router(suministros.router,  prefix="/api/suministros", tags=["Suministros"])
+app.include_router(licencias.router,    prefix="/api/licencias",   tags=["Licencias"])
+app.include_router(importar.router,     prefix="/api/importar",    tags=["Importar CSV"])
 
 
 # ─── Health check ─────────────────────────────────────────

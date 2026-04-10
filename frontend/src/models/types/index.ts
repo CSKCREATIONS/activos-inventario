@@ -54,8 +54,8 @@ export interface Equipo {
   licenciamiento_so?: string;
   licenciamiento_office?: string;
   marca_monitor?: string;
-  placa_monitor?: string;
-}
+  placa_monitor?: string;  // ── Mantenimiento ─────────────────────────────────────────
+  ultimo_mantenimiento?: string | null;}
 
 // ─── ASIGNACIÓN ───────────────────────────────────────────────────────────────
 
@@ -117,6 +117,39 @@ export interface Suministro {
   fecha_registro: string;
 }
 
+// ─── LICENCIA ─────────────────────────────────────────────────────────────────
+
+export type EstadoLicencia = 'Disponible' | 'Stock bajo' | 'Sin stock';
+export type EstadoLicenciaAsignada = 'Activa' | 'Liberada' | 'Vencida';
+
+export interface Licencia {
+  id: string;
+  nombre: string;
+  marca?: string;
+  modelo?: string;
+  cantidad_total: number;
+  cantidad_minima: number;
+  cantidad_asignada: number;
+  cantidad_disponible: number;
+  estado: EstadoLicencia;
+  observaciones?: string;
+  fecha_registro: string;
+}
+
+export interface LicenciaAsignada {
+  id: string;
+  licencia_id: string;
+  serial?: string;
+  equipo_id?: string;
+  equipo_placa?: string;
+  equipo_nombre?: string;
+  usuario?: string;
+  estado: EstadoLicenciaAsignada;
+  fecha_asignacion: string;
+  fecha_vencimiento?: string;
+  observaciones?: string;
+}
+
 // ─── DASHBOARD KPIs ───────────────────────────────────────────────────────────
 
 export interface DashboardStats {
@@ -126,5 +159,19 @@ export interface DashboardStats {
   equipos_criticos: number;
   equipos_sin_acta: number;
   equipos_sin_hoja_vida: number;
-  equipos_rentados: number;
+  equipos_rentados: number;  equipos_pendientes_mantenimiento: number;
 }
+
+export interface EquipoMantenimiento {
+  id: string;
+  placa: string;
+  marca?: string;
+  modelo?: string;
+  tipo_equipo: string;
+  estado: string;
+  ultimo_mantenimiento?: string | null;
+  usuario_nombre?: string;
+  area?: string;
+  cargo?: string;
+  dias_vencido?: number | null;
+  urgencia: 'sin_registro' | 'vencido';}

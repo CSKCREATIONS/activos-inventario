@@ -6,8 +6,8 @@ import { useEquiposStore } from '../models/stores/useEquiposStore';
 import { useAsignacionesStore } from '../models/stores/useAsignacionesStore';
 import { useUsuariosStore } from '../models/stores/useUsuariosStore';
 import { useDocumentosStore } from '../models/stores/useAccesoriosStore';
-import { equiposApi, asignacionesApi, usuariosApi, documentosApi } from '../services/api';
-import type { DashboardStats } from '../models/types/index';
+import { equiposApi, asignacionesApi, usuariosApi, documentosApi, dashboardApi } from '../services/api';
+import type { DashboardStats, EquipoMantenimiento } from '../models/types/index';
 
 export function useDashboardController() {
   const { equipos, setEquipos } = useEquiposStore();
@@ -17,22 +17,27 @@ export function useDashboardController() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mantenimientosPendientes, setMantenimientosPendientes] = useState<{
+    total: number; sin_registro: number; vencidos: number; equipos: EquipoMantenimiento[];
+  }>({ total: 0, sin_registro: 0, vencidos: 0, equipos: [] });
 
   // ── Carga inicial de todos los datos ──────────────────────────────────────
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [eqRes, asigRes, usrRes, docRes] = await Promise.all([
+      const [eqRes, asigRes, usrRes, docRes, mantRes] = await Promise.all([
         equiposApi.getAll(),
         asignacionesApi.getAll(),
         usuariosApi.getAll(),
         documentosApi.getAll(),
+        dashboardApi.getMantenimientosPendientes(),
       ]);
       setEquipos(eqRes.data);
       setAsignaciones(asigRes.data);
       setUsuarios(usrRes.data);
       setDocumentos(docRes.data);
+      setMantenimientosPendientes(mantRes.data);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al cargar datos del dashboard.');
     } finally {
@@ -55,6 +60,7 @@ export function useDashboardController() {
       equipos_sin_acta: equipos.filter((e) => e.estado !== 'Baja' && !equiposConActa.has(e.id)).length,
       equipos_sin_hoja_vida: equipos.filter((e) => e.estado !== 'Baja' && !equiposConHv.has(e.id)).length,
       equipos_rentados: equipos.filter((e) => e.es_rentado).length,
+      equipos_pendientes_mantenimiento: mantenimientosPendientes.total,
     };
   }, [equipos, documentos]);
 
@@ -108,8 +114,10 @@ export function useDashboardController() {
       list.push({ tipo: 'error', mensaje: `${sinResponsable.length} equipos "Asignado" sin asignación activa registrada` });
     if (stats.equipos_rentados > 0)
       list.push({ tipo: 'info', mensaje: `${stats.equipos_rentados} equipo(s) rentado(s) activos` });
+    if (mantenimientosPendientes.total > 0)
+      list.push({ tipo: 'warning', mensaje: `${mantenimientosPendientes.total} equipo(s) pendientes de mantenimiento (cada 6 meses)` });
     return list;
-  }, [stats, equipos, asignaciones]);
+  }, [stats, equipos, asignaciones, mantenimientosPendientes]);
 
-  return { stats, datosPorArea, datosPorCriticidad, datosPorSO, datosPorEstado, alertas, loading, error };
+  return { stats, datosPorArea, datosPorCriticidad, datosPorSO, datosPorEstado, alertas, mantenimientosPendientes, loading, error };
 }

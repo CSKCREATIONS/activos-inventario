@@ -1,0 +1,247 @@
+"""
+Endpoint de carga masiva por CSV.
+POST /api/importar/{entidad}
+
+Entidades soportadas: equipos, usuarios, suministros, accesorios
+Respuesta: { total, insertados, errores: [{fila, campos, error}] }
+"""
+import csv
+import io
+import re
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from models.equipo import EquipoModel
+from models.usuario import UsuarioModel
+from models.suministro import SuministroModel
+from models.accesorio import AccesorioModel
+
+router = APIRouter()
+
+ENTIDADES = {"equipos", "usuarios", "suministros", "accesorios"}
+
+# ── Campos requeridos por entidad ──────────────────────────────────────────────
+REQUIRED: dict[str, list[str]] = {
+    "equipos":     ["placa", "tipo_equipo", "criticidad", "confidencialidad"],
+    "usuarios":    ["nombre", "cargo", "proceso", "grupo_asignado", "area", "correo"],
+    "suministros": ["nombre", "tipo"],
+    "accesorios":  ["nombre"],
+}
+
+# ── Plantillas CSV (cabeceras) ─────────────────────────────────────────────────
+HEADERS: dict[str, list[str]] = {
+    "equipos": [
+        "placa", "serial", "tipo_equipo", "marca", "modelo",
+        "sistema_operativo","ram", "disco",
+        "criticidad", "confidencialidad", "estado", "fecha_compra",
+        "proveedor", "costo", "es_rentado", "observaciones",
+        "procesador", "nombre_equipo",
+    ],
+    "usuarios": [
+        "nombre", "cargo", "proceso", "grupo_asignado", "area",
+        "correo", "ubicacion", "activo",
+    ],
+    "suministros": [
+        "nombre", "tipo", "referencia", "marca", "modelo",
+        "cantidad", "cantidad_minima", "estado", "proveedor",
+        "fecha_vencimiento", "costo", "observaciones",
+    ],
+    "accesorios": [
+        "nombre", "cantidad", "estado",
+        "observaciones",
+    ],
+}
+
+
+def _parse_csv(content: bytes) -> list[dict]:
+    text = content.decode("utf-8-sig").strip()   # utf-8-sig elimina el BOM de Excel
+    reader = csv.DictReader(io.StringIO(text))
+    return [row for row in reader]
+
+
+def _s(v) -> str:
+    """Convierte cualquier valor de celda a str limpio (evita 'bool has no .strip')."""
+    if v is None:
+        return ""
+    return str(v).strip()
+
+
+def _normalize_header(h: str) -> str:
+    # Normaliza cabeceras: trim, lowercase, espacios -> guion_bajo, elimina caracteres no alfanuméricos
+    if h is None:
+        return ""
+    s = h.strip().lower()
+    s = re.sub(r"\s+", "_", s)
+    s = re.sub(r"[^a-z0-9_]+", "", s)
+    return s
+
+
+async def _insert_equipo(row: dict) -> None:
+    # Normalizar booleano
+    row["es_rentado"] = _s(row.get("es_rentado", "0")).lower() in ("1", "true", "si", "sí")
+    # Limpiar vacíos → None (convierte todo a str primero)
+    data = {k: (_s(v) if _s(v) != "" else None) for k, v in row.items()}
+    data["es_rentado"] = row["es_rentado"]
+    await EquipoModel.create(data)
+
+
+async def _insert_usuario(row: dict) -> None:
+    data = {k: (_s(v) if _s(v) != "" else None) for k, v in row.items()}
+    activo_raw = _s(data.get("activo") or "1").lower()
+    data["activo"] = activo_raw not in ("0", "false", "no")
+    await UsuarioModel.create(data)
+
+
+async def _insert_suministro(row: dict) -> None:
+    data = {k: (_s(v) if _s(v) != "" else None) for k, v in row.items()}
+    if data.get("cantidad") is not None:
+        data["cantidad"] = int(data["cantidad"])
+    if data.get("cantidad_minima") is not None:
+        data["cantidad_minima"] = int(data["cantidad_minima"])
+    if data.get("costo") is not None:
+        data["costo"] = float(data["costo"])
+    await SuministroModel.create(data)
+
+
+async def _insert_accesorio(row: dict) -> None:
+    data = {k: (_s(v) if _s(v) != "" else None) for k, v in row.items()}
+    if data.get("cantidad") is not None:
+        data["cantidad"] = int(data["cantidad"])
+    await AccesorioModel.create(data)
+
+
+INSERTERS = {
+    "equipos":     _insert_equipo,
+    "usuarios":    _insert_usuario,
+    "suministros": _insert_suministro,
+    "accesorios":  _insert_accesorio,
+}
+
+
+# ── Endpoint principal ────────────────────────────────────────────────────────
+
+@router.post("/{entidad}")
+async def importar_csv(entidad: str, archivo: UploadFile = File(...)):
+    if entidad not in ENTIDADES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Entidad no soportada. Usa: {', '.join(sorted(ENTIDADES))}.",
+        )
+
+    if not archivo.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Solo se aceptan archivos .csv")
+
+    content = await archivo.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+
+    try:
+        filas = _parse_csv(content)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Error al leer el CSV: {e}")
+
+    if not filas:
+        raise HTTPException(status_code=422, detail="El CSV no contiene filas de datos.")
+
+    # Normalizar cabeceras y crear filas con keys normalizadas; convertir todos los valores a str
+    try:
+        filas_normalizadas = []
+        for f in filas:
+            normed = { _normalize_header(k): _s(v) for k, v in f.items() }
+            filas_normalizadas.append(normed)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Error al normalizar cabeceras: {e}")
+
+    # Validar que existan las columnas requeridas (usando cabeceras normalizadas)
+    columnas_csv = set(filas_normalizadas[0].keys())
+    faltantes = [c for c in REQUIRED[entidad] if c not in columnas_csv]
+    if faltantes:
+        raise HTTPException(
+            status_code=422,
+            detail=f"El CSV no tiene las columnas requeridas: {', '.join(faltantes)}. "
+                   f"Descarga la plantilla para ver el formato correcto.",
+        )
+
+    inserter = INSERTERS[entidad]
+    insertados = 0
+    errores: list[dict] = []
+
+    for idx, fila in enumerate(filas_normalizadas, start=2):   # start=2 porque fila 1 es cabecera
+        # Ignorar filas completamente vacías
+        if all(_s(v) == "" for v in fila.values()):
+            continue
+        # Validar campos requeridos
+        vacios = [c for c in REQUIRED[entidad] if not str(fila.get(c, "")).strip()]
+        if vacios:
+            errores.append({
+                "fila": idx,
+                "campos": dict(fila),
+                "error": f"Campos obligatorios vacíos: {', '.join(vacios)}",
+            })
+            continue
+        try:
+            await inserter(fila)
+            insertados += 1
+        except Exception as e:
+            msg = str(e)
+            if "Duplicate entry" in msg or "1062" in msg:
+                msg = "Registro duplicado (placa o correo ya existe)"
+            errores.append({"fila": idx, "campos": dict(fila), "error": msg})
+
+    return {
+        "total":      len(filas),
+        "insertados": insertados,
+        "errores":    errores,
+    }
+
+
+# ── Descarga de plantillas ────────────────────────────────────────────────────
+
+@router.get("/{entidad}/plantilla")
+async def descargar_plantilla(entidad: str):
+    from fastapi.responses import Response
+
+    if entidad not in ENTIDADES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Entidad no soportada. Usa: {', '.join(sorted(ENTIDADES))}.",
+        )
+
+    headers_row = HEADERS[entidad]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers_row)
+
+    # Fila de ejemplo
+    ejemplos: dict[str, list] = {
+        "equipos": [
+            "EAC000001", "SN123456", "Laptop", "Lenovo", "ThinkPad L14",
+            "Windows 11", "16 GB", "512 GB SSD",
+            "Alta", "Confidencial", "Disponible", "2024-01-10",
+            "Proveedor SAS", "3500000", "0", "",
+            "Intel Core i5", "ITAM-PC-001",
+        ],
+        "usuarios": [
+            "Juan Pérez", "Asesor", "Servicio al Cliente",
+            "Grupo A", "Tecnología", "juan.perez@empresa.com",
+            "Piso 2", "1",
+        ],
+        "suministros": [
+            "Toner HP 26A", "Toner", "CF226A", "HP", "LaserJet Pro M402",
+            "5", "2", "Disponible", "TechSupplies SAS",
+            "", "85000", "",
+        ],
+        "accesorios": [
+            "Mouse inalámbrico", "SN-001",
+            "1", "Disponible", "",
+        ],
+    }
+
+    writer.writerow(ejemplos[entidad])
+
+    csv_bytes = output.getvalue().encode("utf-8-sig")
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="plantilla_{entidad}.csv"'
+        },
+    )

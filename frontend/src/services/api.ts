@@ -2,7 +2,8 @@
 // Base URL: variable de entorno VITE_API_URL o fallback local
 
 import type {
-  Usuario, Equipo, Asignacion, Accesorio, Documento, Suministro,
+  Usuario, Equipo, Asignacion, Accesorio, Documento, Suministro, EquipoMantenimiento,
+  Licencia, LicenciaAsignada,
 } from '../models/types/index';
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api';
@@ -134,6 +135,10 @@ export const documentosApi = {
 
 export const dashboardApi = {
   getStats: () => request<{ data: unknown }>('/dashboard'),
+  getMantenimientosPendientes: () =>
+    request<{ data: { total: number; sin_registro: number; vencidos: number; equipos: EquipoMantenimiento[] } }>(
+      '/dashboard/mantenimientos-pendientes'
+    ),
 };
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -167,4 +172,64 @@ export const suministrosApi = {
     request<{ data: Suministro }>(`/suministros/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   remove: (id: string) =>
     request<{ message: string }>(`/suministros/${id}`, { method: 'DELETE' }),
+};
+
+// ─── Licencias ────────────────────────────────────────────────────────────────
+
+export const licenciasApi = {
+  // Tipos de licencia
+  getAll: (busqueda?: string) =>
+    request<{ data: Licencia[]; total: number }>(buildUrl('/licencias', busqueda ? { busqueda } : undefined)),
+  create: (body: Pick<Licencia, 'nombre'> & Partial<Licencia>) =>
+    request<{ data: Licencia }>('/licencias', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: string, body: Partial<Licencia>) =>
+    request<{ data: Licencia }>(`/licencias/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  remove: (id: string) =>
+    request<{ message: string }>(`/licencias/${id}`, { method: 'DELETE' }),
+
+  // Asignaciones individuales
+  getAsignaciones: (licenciaId: string) =>
+    request<{ data: LicenciaAsignada[]; total: number }>(`/licencias/${licenciaId}/asignaciones`),
+  asignar: (licenciaId: string, body: Omit<LicenciaAsignada, 'id' | 'licencia_id' | 'equipo_placa' | 'equipo_nombre'>) =>
+    request<{ data: LicenciaAsignada }>(`/licencias/${licenciaId}/asignaciones`, { method: 'POST', body: JSON.stringify(body) }),
+  actualizarAsignacion: (id: string, body: Partial<LicenciaAsignada>) =>
+    request<{ data: LicenciaAsignada }>(`/licencias/asignaciones/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  liberarAsignacion: (id: string) =>
+    request<{ data: LicenciaAsignada }>(`/licencias/asignaciones/${id}/liberar`, { method: 'POST' }),
+  eliminarAsignacion: (id: string) =>
+    request<{ message: string }>(`/licencias/asignaciones/${id}`, { method: 'DELETE' }),
+};
+
+// ─── Importar CSV ─────────────────────────────────────────────────────────────
+
+export type EntidadImportable = 'equipos' | 'usuarios' | 'suministros' | 'accesorios';
+
+export interface ImportarErrorFila {
+  fila: number;
+  campos: Record<string, string>;
+  error: string;
+}
+
+export interface ImportarResult {
+  total: number;
+  insertados: number;
+  errores: ImportarErrorFila[];
+}
+
+export const importarApi = {
+  upload: async (entidad: EntidadImportable, archivo: File): Promise<ImportarResult> => {
+    const form = new FormData();
+    form.append('archivo', archivo);
+    const res = await fetch(`${BASE}/importar/${entidad}`, {
+      method: 'POST',
+      headers: getAuthHeader(),
+      body: form,
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error((json as { detail?: string }).detail ?? `Error ${res.status}`);
+    return json as ImportarResult;
+  },
+  descargarPlantilla: (entidad: EntidadImportable) => {
+    window.open(`${BASE}/importar/${entidad}/plantilla`, '_blank');
+  },
 };

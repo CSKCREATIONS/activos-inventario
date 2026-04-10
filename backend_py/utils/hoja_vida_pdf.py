@@ -119,14 +119,14 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     c.saveState()
     c.setFont("Helvetica-Bold", 8)
     c.setFillColor(C_HEADER)
-    c.drawCentredString(x0 + logo_w / 2, y - cab_h / 2 - 4, "EMPRESA")
+    c.drawCentredString(x0 + logo_w / 2, y - cab_h / 2 - 4, "LOGO EXPRESO")
     c.restoreState()
 
     # Título central
-    _rect(c, x0 + logo_w, y - cab_h, title_w, cab_h, fill=C_HEADER, stroke=True)
+    _rect(c, x0 + logo_w, y - cab_h, title_w, cab_h, fill=C_WHITE, stroke=True)
     c.saveState()
     c.setFont("Helvetica-Bold", 14)
-    c.setFillColor(C_WHITE)
+    c.setFillColor(C_HEADER)
     c.drawCentredString(x0 + logo_w + title_w / 2, y - cab_h / 2 - 5,
                         "HOJA DE VIDA DE EQUIPOS")
     c.restoreState()
@@ -136,7 +136,7 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     rh    = cab_h / 3
     metas = [("Código", "F-TC-002"), ("Fecha", _fmt_date(date.today())), ("Versión", "5")]
     for i, (k, v) in enumerate(metas):
-        bg = C_LABEL if i % 2 == 0 else C_WHITE
+        bg = C_WHITE if i % 2 == 0 else C_WHITE
         _rect(c, mx0, y - cab_h + (2 - i) * rh, meta_w, rh, fill=bg)
         _text(c, f"{k}:  {v}", mx0, y - cab_h + (2 - i) * rh, meta_w, rh, size=7)
 
@@ -146,13 +146,13 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     hw2 = USEW / 2
     placa_lw = 40
     _rect(c, x0, y - ROW, hw2, ROW, fill=C_WHITE)
-    _rect(c, x0, y - ROW, placa_lw, ROW, fill=C_LABEL)
+    _rect(c, x0, y - ROW, placa_lw, ROW, fill=C_WHITE)
     _text(c, "PLACA", x0, y - ROW, placa_lw, ROW, bold=True)
     _text(c, equipo.get("placa", ""), x0 + placa_lw, y - ROW,
           hw2 - placa_lw, ROW, align="left")
 
     _rect(c, x0 + hw2, y - ROW, hw2, ROW, fill=C_WHITE)
-    _rect(c, x0 + hw2, y - ROW, placa_lw, ROW, fill=C_LABEL)
+    _rect(c, x0 + hw2, y - ROW, placa_lw, ROW, fill=C_WHITE)
     _text(c, "Fecha", x0 + hw2, y - ROW, placa_lw, ROW, bold=True)
     _text(c, _fmt_date(equipo.get("fecha_registro")),
           x0 + hw2 + placa_lw, y - ROW, hw2 - placa_lw, ROW, align="left")

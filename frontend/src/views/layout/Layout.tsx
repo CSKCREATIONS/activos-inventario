@@ -14,6 +14,7 @@ const TITULOS: Record<string, { titulo: string; subtitulo: string }> = {
   '/documentos':     { titulo: 'Documentos',       subtitulo: 'Gestión documental – actas, hojas de vida, garantías' },
   '/reportes':       { titulo: 'Reportes',         subtitulo: 'Reportes exportables y análisis del inventario' },
   '/administracion': { titulo: 'Administración',   subtitulo: 'Configuración del sistema' },
+  '/importar':       { titulo: 'Importar CSV',      subtitulo: 'Carga masiva de datos desde archivos CSV' },
 };
 
 export function Layout() {

@@ -5,9 +5,10 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend
 } from 'recharts';
-import { Monitor, CheckCircle, AlertTriangle, ShieldAlert, FileX, FileWarning, Repeat } from 'lucide-react';
+import { Monitor, CheckCircle, AlertTriangle, ShieldAlert, FileX, FileWarning, Repeat, Wrench, Clock } from 'lucide-react';
 import { useDashboardController } from '../../../controllers/useDashboardController';
 import { KpiCard, Card } from '../../components/ui/index';
+import type { EquipoMantenimiento } from '../../../models/types/index';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16'];
 
@@ -28,7 +29,7 @@ const ESTADO_COLORS: Record<string, string> = {
 };
 
 export function DashboardPage() {
-  const { stats, datosPorArea, datosPorCriticidad, datosPorSO, datosPorEstado, alertas } =
+  const { stats, datosPorArea, datosPorCriticidad, datosPorSO, datosPorEstado, alertas, mantenimientosPendientes } =
     useDashboardController();
 
   return (
@@ -67,6 +68,28 @@ export function DashboardPage() {
         <KpiCard titulo="Sin acta firmada" valor={stats.equipos_sin_acta} icon={<FileX size={20} />} color="orange" />
         <KpiCard titulo="Sin hoja de vida" valor={stats.equipos_sin_hoja_vida} icon={<FileWarning size={20} />} color="orange" />
         <KpiCard titulo="Equipos rentados" valor={stats.equipos_rentados} icon={<Repeat size={20} />} color="purple" />
+      </div>
+
+      {/* KPI Mantenimiento */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <KpiCard
+          titulo="Pendientes de mantenimiento"
+          valor={stats.equipos_pendientes_mantenimiento}
+          icon={<Wrench size={20} />}
+          color="red"
+        />
+        <KpiCard
+          titulo="Sin mantenimiento registrado"
+          valor={mantenimientosPendientes.sin_registro}
+          icon={<AlertTriangle size={20} />}
+          color="red"
+        />
+        <KpiCard
+          titulo="Mantenimiento vencido"
+          valor={mantenimientosPendientes.vencidos}
+          icon={<Clock size={20} />}
+          color="orange"
+        />
       </div>
 
       {/* Gráficas - fila 1 */}
@@ -164,6 +187,91 @@ export function DashboardPage() {
         </Card>
       </div>
 
+      {/* Widget: Equipos pendientes de mantenimiento */}
+      <TablaMantenimientos data={mantenimientosPendientes} />
+
     </div>
+  );
+}
+
+// ── Componente tabla mantenimientos ──────────────────────────────────────────
+
+function TablaMantenimientos({
+  data,
+}: Readonly<{
+  data: { total: number; sin_registro: number; vencidos: number; equipos: EquipoMantenimiento[] };
+}>) {
+  if (data.total === 0) return null;
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b bg-gradient-to-r from-red-600 to-orange-500">
+        <div className="flex items-center gap-2">
+          <Wrench size={16} className="text-white" />
+          <h3 className="text-white font-semibold text-sm">
+            Equipos pendientes de mantenimiento
+          </h3>
+          <span className="text-xs text-red-100 hidden sm:inline">(intervalo: 6 meses)</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-medium">
+            {data.total} equipo{data.total === 1 ? '' : 's'}
+          </span>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-slate-50 text-slate-500 uppercase tracking-wide border-b">
+              <th className="px-4 py-2.5 text-left font-medium">Placa</th>
+              <th className="px-4 py-2.5 text-left font-medium">Equipo</th>
+              <th className="px-4 py-2.5 text-left font-medium hidden sm:table-cell">Usuario</th>
+              <th className="px-4 py-2.5 text-left font-medium hidden md:table-cell">Área</th>
+              <th className="px-4 py-2.5 text-left font-medium">Último mant.</th>
+              <th className="px-4 py-2.5 text-center font-medium">Estado</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {data.equipos.slice(0, 10).map((eq) => (
+              <tr key={eq.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-4 py-2.5 font-mono font-semibold text-blue-700">{eq.placa}</td>
+                <td className="px-4 py-2.5 text-slate-800">{eq.marca ?? ''} {eq.modelo ?? ''}</td>
+                <td className="px-4 py-2.5 text-slate-600 truncate max-w-[140px] hidden sm:table-cell">
+                  {eq.usuario_nombre ?? <span className="text-slate-400 italic">Sin asignar</span>}
+                </td>
+                <td className="px-4 py-2.5 text-slate-600 hidden md:table-cell">{eq.area ?? '—'}</td>
+                <td className="px-4 py-2.5 text-slate-600">
+                  {eq.ultimo_mantenimiento
+                    ? new Date(eq.ultimo_mantenimiento).toLocaleDateString('es-CO')
+                    : <span className="text-red-500 italic">Nunca</span>}
+                </td>
+                <td className="px-4 py-2.5 text-center">
+                  {eq.urgencia === 'sin_registro' ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px]
+                                     font-semibold bg-red-100 text-red-700 border border-red-200">
+                      <AlertTriangle size={10} /> Sin registro
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px]
+                                     font-semibold bg-orange-100 text-orange-700 border border-orange-200">
+                      <Clock size={10} /> {eq.dias_vencido}d vencido
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {data.total > 10 && (
+        <div className="px-5 py-3 bg-slate-50 border-t text-center">
+          <span className="text-xs text-slate-500">
+            Mostrando 10 de {data.total} equipos pendientes
+          </span>
+        </div>
+      )}
+    </Card>
   );
 }

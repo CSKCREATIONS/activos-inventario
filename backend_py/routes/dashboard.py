@@ -1,8 +1,84 @@
+from datetime import date
 from fastapi import APIRouter, HTTPException
 from config.db import get_pool
 from utils.serializer import serialize
 
 router = APIRouter()
+
+
+def _add_months(d: date, months: int) -> date:
+    """Suma N meses a una fecha sin dependencias externas."""
+    month = d.month - 1 + months
+    year  = d.year + month // 12
+    month = month % 12 + 1
+    import calendar
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+@router.get("/mantenimientos-pendientes")
+async def get_mantenimientos_pendientes():
+    """
+    Devuelve equipos activos cuyo ultimo_mantenimiento es NULL
+    o tiene más de 6 meses de antigüedad.
+    Ordena por urgencia: sin mantenimiento primero, luego por fecha más antigua.
+    """
+    pool = await get_pool()
+    try:
+        limite = _add_months(date.today(), -6).isoformat()
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    SELECT
+                        e.id, e.placa, e.marca, e.modelo, e.tipo_equipo,
+                        e.estado, e.ultimo_mantenimiento,
+                        u.nombre  AS usuario_nombre,
+                        u.area    AS area,
+                        u.cargo   AS cargo
+                    FROM equipos e
+                    LEFT JOIN asignaciones a
+                        ON a.equipo_id = e.id AND a.estado = 'Activa'
+                    LEFT JOIN usuarios u ON u.id = a.usuario_id
+                    WHERE e.estado != 'Baja'
+                      AND (
+                            e.ultimo_mantenimiento IS NULL
+                         OR e.ultimo_mantenimiento <= %s
+                      )
+                    ORDER BY e.ultimo_mantenimiento ASC
+                """, [limite])
+                rows = await cur.fetchall()
+
+        total = len(rows)
+        sin_registro = sum(1 for r in rows if not r.get("ultimo_mantenimiento"))
+        vencidos     = total - sin_registro
+
+        equipos_out = []
+        for r in rows:
+            ult = r.get("ultimo_mantenimiento")
+            if not ult:
+                dias_vencido = None
+                urgencia = "sin_registro"
+            else:
+                fecha_ult = ult if isinstance(ult, date) else date.fromisoformat(str(ult)[:10])
+                proximo   = _add_months(fecha_ult, 6)
+                dias_vencido = (date.today() - proximo).days
+                urgencia = "vencido"
+            equipos_out.append({
+                **{k: (v.isoformat() if isinstance(v, date) else v) for k, v in r.items()},
+                "dias_vencido": dias_vencido,
+                "urgencia":     urgencia,
+            })
+
+        return serialize({
+            "data": {
+                "total":        total,
+                "sin_registro": sin_registro,
+                "vencidos":     vencidos,
+                "equipos":      equipos_out,
+            }
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("")

@@ -9,7 +9,7 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard, Monitor, Users, Link2, Package,
   FileText, BarChart3, Settings, ChevronLeft, ChevronRight, Shield, X,
-  FlaskConical, ChevronDown, Printer, Key, Cable,
+  FlaskConical, ChevronDown, Printer, Key, Cable, Upload,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { to: '/documentos',    label: 'Documentos',     icon: FileText },
   { to: '/reportes',      label: 'Reportes',       icon: BarChart3 },
   { to: '/administracion',label: 'Administración', icon: Settings },
+  { to: '/importar',      label: 'Importar CSV',   icon: Upload },
 ];
 
 interface NavGroup {

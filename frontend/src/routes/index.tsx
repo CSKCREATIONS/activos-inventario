@@ -10,6 +10,7 @@ import { DocumentosPage } from '../views/pages/documentos/DocumentosPage';
 import { ReportesPage } from '../views/pages/reportes/ReportesPage';
 import { AdministracionPage } from '../views/pages/administracion/AdministracionPage';
 import { SuministrosPage } from '../views/pages/suministros/SuministrosPage';
+import { ImportarPage } from '../views/pages/importar/ImportarPage';
 import { LoginPage } from '../views/pages/login/LoginPage';
 import { useAuthStore } from '../models/stores/useAuthStore';
 
@@ -53,6 +54,7 @@ export const router = createBrowserRouter([
           { path: 'suministros/toners',   element: <SuministrosPage /> },
           { path: 'suministros/licencias', element: <SuministrosPage /> },
           { path: 'suministros/cables',   element: <SuministrosPage /> },
+          { path: 'importar',            element: <ImportarPage /> },
         ],
       },
     ],
