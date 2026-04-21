@@ -1,14 +1,15 @@
 // VIEW: Página Suministros — Toners, Licencias, Cables
 // Tabs por tipo de suministro con CRUD completo
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
-import { Plus, Printer, Key, Cable, AlertTriangle, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Printer, Key, Cable, Box, AlertTriangle, Pencil, Trash2, Upload } from 'lucide-react';
 import type { Suministro, TipoSuministro, EstadoSuministro } from '../../../models/types/index';
-import { suministrosApi } from '../../../services/api';
+import { suministrosApi, importarApi } from '../../../services/api';
+import type { ImportarResult } from '../../../services/api';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -16,6 +17,7 @@ const TIPOS: { tipo: TipoSuministro; label: string; icon: React.ReactNode; path:
   { tipo: 'Toner',    label: 'Toners',    icon: <Printer size={16} />, path: '/suministros/toners'    },
   { tipo: 'Licencia', label: 'Licencias', icon: <Key     size={16} />, path: '/suministros/licencias' },
   { tipo: 'Cable',    label: 'Cables',    icon: <Cable   size={16} />, path: '/suministros/cables'    },
+  { tipo: 'Rollo',    label: 'Rollos',    icon: <Box     size={16} />, path: '/suministros/rollos'    },
 ];
 
 const ESTADOS: EstadoSuministro[] = ['Disponible', 'Agotado', 'Reservado', 'Baja'];
@@ -31,6 +33,7 @@ const TIPO_FROM_PATH: Record<string, TipoSuministro> = {
   toners:    'Toner',
   licencias: 'Licencia',
   cables:    'Cable',
+  rollos:    'Rollo',
 };
 
 const EMPTY_FORM: Partial<Suministro> = {
@@ -53,6 +56,9 @@ export function SuministrosPage() {
   const [filtroEstado, setFiltroEstado] = useState<EstadoSuministro | ''>('');
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState<string | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResultado, setImportResultado] = useState<ImportarResult | null>(null);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modoEdicion,  setModoEdicion]  = useState(false);
   const [selected,     setSelected]    = useState<Suministro | null>(null);
@@ -78,6 +84,42 @@ export function SuministrosPage() {
   }, [tipoActivo, busqueda, filtroEstado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImportClick = () => {
+    setImportResultado(null);
+    setImportMessage(null);
+    setError(null);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    if (!file) return;
+    setImportLoading(true);
+    setImportResultado(null);
+    setImportMessage(null);
+    setError(null);
+    try {
+      const res = await importarApi.upload('suministros', file);
+      setImportResultado(res);
+      if (res.insertados > 0) {
+        await fetchData();
+      }
+      if (res.errores && res.errores.length > 0) {
+        setError(`Importado con errores: ${res.errores.length} fila(s) con problema.`);
+      } else {
+        setImportMessage(`Importación exitosa: ${res.insertados} registro(s) insertados.`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al importar archivo.');
+    } finally {
+      setImportLoading(false);
+      // allow re-selecting same file
+      e.currentTarget.value = '';
+    }
+  };
 
   // ── CRUD ───────────────────────────────────────────────────────────────────
   const handleGuardar = async () => {
@@ -164,12 +206,22 @@ export function SuministrosPage() {
           <option value="">Todos los estados</option>
           {ESTADOS.map((s) => <option key={s}>{s}</option>)}
         </select>
-        <div className="sm:ml-auto">
+        <div className="sm:ml-auto flex items-center gap-2">
+          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
+          <Button icon={<Upload size={16} />} onClick={handleImportClick} className="hidden sm:inline-flex">
+            {importLoading ? 'Importando…' : 'Importar CSV'}
+          </Button>
           <Button icon={<Plus size={16} />} onClick={abrirCrear} className="w-full sm:w-auto">
             Nuevo {tipoInfo.label.slice(0, -1)}
           </Button>
         </div>
       </div>
+
+      {importMessage && (
+        <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+          {importMessage}
+        </div>
+      )}
 
       {/* Contador */}
       <p className="text-sm text-slate-500">

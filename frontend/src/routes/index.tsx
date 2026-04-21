@@ -54,6 +54,7 @@ export const router = createBrowserRouter([
           { path: 'suministros/toners',   element: <SuministrosPage /> },
           { path: 'suministros/licencias', element: <SuministrosPage /> },
           { path: 'suministros/cables',   element: <SuministrosPage /> },
+          { path: 'suministros/rollos',   element: <SuministrosPage /> },
           { path: 'importar',            element: <ImportarPage /> },
         ],
       },

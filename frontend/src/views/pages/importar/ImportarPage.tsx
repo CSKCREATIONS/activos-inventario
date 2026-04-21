@@ -8,7 +8,7 @@ import type { EntidadImportable } from '../../../services/api';
 const ENTIDADES: { value: EntidadImportable; label: string; descripcion: string }[] = [
   { value: 'equipos',    label: 'Activos / Equipos', descripcion: 'Laptops, desktops, impresoras y otros equipos' },
   { value: 'usuarios',   label: 'Usuarios',           descripcion: 'Responsables de activos TI' },
-  { value: 'suministros',label: 'Suministros',        descripcion: 'Toners, licencias y cables' },
+  { value: 'suministros',label: 'Suministros',        descripcion: 'Toners, licencias, cables y rollos de cintas' },
   { value: 'accesorios', label: 'Accesorios',         descripcion: 'Periféricos y dispositivos complementarios' },
 ];
 

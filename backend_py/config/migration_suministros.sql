@@ -1,5 +1,5 @@
 -- =========================================================
--- MIGRACIÓN: Tabla suministros (Toners, Licencias, Cables)
+-- MIGRACIÓN: Tabla suministros (Toners, Licencias, Cables, Rollos)
 -- Ejecutar en phpMyAdmin o consola MySQL
 -- =========================================================
 
@@ -8,7 +8,7 @@ USE inventory_system;
 CREATE TABLE IF NOT EXISTS suministros (
   id                VARCHAR(36)   NOT NULL PRIMARY KEY,
   nombre            VARCHAR(200)  NOT NULL,
-  tipo              ENUM('Toner','Licencia','Cable','Otro') NOT NULL,
+  tipo              ENUM('Toner','Licencia','Cable','Rollo','Otro') NOT NULL,
   referencia        VARCHAR(150),
   marca             VARCHAR(100),
   modelo            VARCHAR(150),

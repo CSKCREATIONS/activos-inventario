@@ -42,6 +42,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/suministros/toners',    label: 'Toners',    icon: Printer },
       { to: '/suministros/licencias', label: 'Licencias', icon: Key    },
       { to: '/suministros/cables',    label: 'Cables',    icon: Cable  },
+      { to: '/suministros/rollos',    label: 'Rollos',    icon: Printer },
     ],
   },
 ];

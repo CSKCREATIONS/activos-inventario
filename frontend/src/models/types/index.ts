@@ -1,6 +1,6 @@
 // ─── ENUMS ────────────────────────────────────────────────────────────────────
 
-export type TipoSuministro = 'Toner' | 'Licencia' | 'Cable';
+export type TipoSuministro = 'Toner' | 'Licencia' | 'Cable' | 'Rollo';
 export type EstadoSuministro = 'Disponible' | 'Agotado' | 'Reservado' | 'Baja';
 
 export type EstadoEquipo = 'Disponible' | 'Asignado' | 'Dañado' | 'Baja' | 'En revisión' | 'Rentado';

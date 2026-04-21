@@ -4,7 +4,7 @@ from utils.serializer import serialize
 
 router = APIRouter()
 
-TIPOS_VALIDOS  = {"Toner", "Licencia", "Cable", "Otro"}
+TIPOS_VALIDOS  = {"Toner", "Licencia", "Cable", "Rollo", "Otro"}
 ESTADOS_VALIDOS = {"Disponible", "Agotado", "Reservado", "Baja"}
 
 
