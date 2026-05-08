@@ -9,7 +9,6 @@ import {
 import { Plus, Printer, Key, Cable, Box, AlertTriangle, Pencil, Trash2, Upload } from 'lucide-react';
 import type { Suministro, TipoSuministro, EstadoSuministro } from '../../../models/types/index';
 import { suministrosApi, importarApi } from '../../../services/api';
-import type { ImportarResult } from '../../../services/api';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -57,7 +56,6 @@ export function SuministrosPage() {
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState<string | null>(null);
   const [importLoading, setImportLoading] = useState(false);
-  const [importResultado, setImportResultado] = useState<ImportarResult | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modoEdicion,  setModoEdicion]  = useState(false);
@@ -88,7 +86,6 @@ export function SuministrosPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleImportClick = () => {
-    setImportResultado(null);
     setImportMessage(null);
     setError(null);
     fileInputRef.current?.click();
@@ -98,12 +95,10 @@ export function SuministrosPage() {
     const file = e.target.files?.[0] ?? null;
     if (!file) return;
     setImportLoading(true);
-    setImportResultado(null);
     setImportMessage(null);
     setError(null);
     try {
       const res = await importarApi.upload('suministros', file);
-      setImportResultado(res);
       if (res.insertados > 0) {
         await fetchData();
       }

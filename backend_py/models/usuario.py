@@ -59,7 +59,7 @@ class UsuarioModel:
                         data["proceso"],
                         data["grupo_asignado"],
                         data["area"],
-                        data["correo"],
+                        data.get("correo"),
                         data.get("ubicacion"),
                         1 if data.get("activo", True) else 0,
                         fecha_registro,

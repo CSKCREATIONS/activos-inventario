@@ -16,7 +16,7 @@ from models.susuario import (
 
 router = APIRouter()
 security = HTTPBearer()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 JWT_SECRET = os.getenv("JWT_SECRET", "changeme_in_production_please_use_env")
 JWT_ALGORITHM = "HS256"
@@ -69,7 +69,16 @@ async def login(body: dict):
     if not user.get("activo"):
         raise HTTPException(status_code=403, detail="Usuario inactivo. Contacta al administrador.")
 
-    if not pwd_context.verify(password, user["password_hash"]):
+    try:
+        verified = pwd_context.verify(password, user["password_hash"])
+    except ValueError as e:
+        msg = str(e)
+        if "72" in msg or "truncate" in msg or "longer than" in msg:
+            verified = pwd_context.verify(password[:72], user["password_hash"])
+        else:
+            raise
+
+    if not verified:
         raise HTTPException(status_code=401, detail="Credenciales incorrectas.")
 
     await update_ultimo_acceso(user["id"])
@@ -118,7 +127,14 @@ async def setup_admin(body: dict):
     nombre = body.get("nombre") or "Administrador"
     email = body.get("email") or "admin@empresa.com"
 
-    hashed = pwd_context.hash(password)
+    try:
+        hashed = pwd_context.hash(password)
+    except ValueError as e:
+        msg = str(e)
+        if "72" in msg or "truncate" in msg or "longer than" in msg:
+            hashed = pwd_context.hash(password[:72])
+        else:
+            raise
     await create_usuario_sistema({
         "id": str(uuid.uuid4()),
         "username": username,

@@ -1,14 +1,85 @@
 import uuid
 from datetime import date
+
+import aiomysql
+
 from config.db import get_pool
 
 
 class DocumentoModel:
+    _archivos_table_ready: bool = False
+
+    @staticmethod
+    async def _ensure_archivos_table():
+        """Crea la tabla de blobs si no existe (idempotente)."""
+        if DocumentoModel._archivos_table_ready:
+            return
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """CREATE TABLE IF NOT EXISTS documentos_archivos (
+                        documento_id VARCHAR(36)  NOT NULL PRIMARY KEY,
+                        filename     VARCHAR(255) NOT NULL,
+                        mime_type    VARCHAR(100) NOT NULL,
+                        contenido    LONGBLOB     NOT NULL,
+                        created_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+                        updated_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_doc_archivo_documento
+                            FOREIGN KEY (documento_id) REFERENCES documentos(id)
+                            ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"""
+                )
+        DocumentoModel._archivos_table_ready = True
+
+    @staticmethod
+    async def upsert_archivo(documento_id: str, *, filename: str, mime_type: str, contenido: bytes) -> None:
+        """Guarda/actualiza el archivo binario asociado a un documento."""
+        await DocumentoModel._ensure_archivos_table()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                # REPLACE: elimina e inserta, sirve como upsert simple.
+                await cur.execute(
+                    """REPLACE INTO documentos_archivos (documento_id, filename, mime_type, contenido)
+                       VALUES (%s, %s, %s, %s)""",
+                    [documento_id, filename, mime_type, contenido],
+                )
+
+    @staticmethod
+    async def get_archivo(documento_id: str) -> dict | None:
+        """Obtiene el archivo binario de un documento (si existe)."""
+        await DocumentoModel._ensure_archivos_table()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(
+                    """SELECT filename, mime_type, contenido
+                       FROM documentos_archivos
+                       WHERE documento_id = %s
+                       LIMIT 1""",
+                    [documento_id],
+                )
+                row = await cur.fetchone()
+                if not row:
+                    return None
+                contenido = row.get("contenido")
+                if isinstance(contenido, memoryview):
+                    contenido = contenido.tobytes()
+                elif isinstance(contenido, bytearray):
+                    contenido = bytes(contenido)
+                return {
+                    "filename": row.get("filename") or "documento",
+                    "mime_type": row.get("mime_type") or "application/octet-stream",
+                    "contenido": contenido or b"",
+                }
+
     @staticmethod
     async def find_all(
         busqueda: str = "",
         tipo: str = "",
         equipo_id: str = "",
+        asignacion_id: str = "",
         usuario_id: str = "",
     ) -> list[dict]:
         pool = await get_pool()
@@ -33,6 +104,9 @@ class DocumentoModel:
         if equipo_id:
             sql += " AND d.equipo_id = %s"
             params.append(equipo_id)
+        if asignacion_id:
+            sql += " AND d.asignacion_id = %s"
+            params.append(asignacion_id)
         if usuario_id:
             sql += " AND d.usuario_id = %s"
             params.append(usuario_id)
@@ -86,7 +160,17 @@ class DocumentoModel:
 
     @staticmethod
     async def update(id: str, data: dict) -> dict | None:
-        allowed = ["nombre", "tipo", "equipo_id", "asignacion_id", "usuario_id", "url", "version", "cargado_por"]
+        allowed = [
+            "nombre",
+            "tipo",
+            "equipo_id",
+            "asignacion_id",
+            "usuario_id",
+            "url",
+            "version",
+            "fecha_carga",
+            "cargado_por",
+        ]
         fields, values = [], []
         for key in allowed:
             if key in data:

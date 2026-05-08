@@ -4,7 +4,7 @@ from passlib.context import CryptContext
 from models.susuario import create_usuario_sistema
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 
 @router.post("", status_code=201)

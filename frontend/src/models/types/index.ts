@@ -6,7 +6,7 @@ export type EstadoSuministro = 'Disponible' | 'Agotado' | 'Reservado' | 'Baja';
 export type EstadoEquipo = 'Disponible' | 'Asignado' | 'Dañado' | 'Baja' | 'En revisión' | 'Rentado';
 export type Criticidad = 'Baja' | 'Media' | 'Alta' | 'Crítica';
 export type Confidencialidad = 'Pública' | 'Interna' | 'Confidencial' | 'Restringida';
-export type TipoEquipo = 'Laptop' | 'Desktop' | 'Tablet' | 'Impresora' | 'Celular' | 'Monitor' | 'Servidor' | 'Switch' | 'Router' | 'UPS' | 'Otro';
+export type TipoEquipo = 'Laptop' | 'Desktop' | 'All-in-one' | 'Tablet' | 'Impresora' | 'Celular' | 'Monitor' | 'Servidor' | 'Switch' | 'Router' | 'UPS' | 'Otro';
 export type EstadoAsignacion = 'Activa' | 'Devuelta' | 'Extraviada';
 export type TipoDocumento = 'Acta' | 'Hoja de vida' | 'Factura' | 'Garantía' | 'Contrato' | 'Manual' | 'Otro';
 
@@ -67,6 +67,7 @@ export interface Asignacion {
   fecha_devolucion?: string;
   estado: EstadoAsignacion;
   observaciones?: string;
+  accesorios_entregados?: string[];
   acta_pdf?: string;
   hoja_vida_pdf?: string;
 }

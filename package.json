@@ -2,6 +2,7 @@
   "name": "inventory-system",
   "version": "1.0.0",
   "scripts": {
+    "seed": "node seed.js",
     "install:all": "npm install --prefix frontend",
     "start:backend_py": "cd backend_py && python main.py",
     "start:frontend": "npm run dev --prefix frontend",
@@ -11,6 +12,10 @@
   "devDependencies": {
     "bcryptjs": "^3.0.3",
     "concurrently": "^8.2.2",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.2"
+  },
+  "dependencies": {
+    "mysql2": "^3.22.3",
+    "yargs": "^18.0.0"
   }
 }

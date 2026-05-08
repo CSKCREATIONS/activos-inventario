@@ -8,6 +8,7 @@ Respuesta: { total, insertados, errores: [{fila, campos, error}] }
 import csv
 import io
 import re
+import unicodedata
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from models.equipo import EquipoModel
 from models.usuario import UsuarioModel
@@ -21,7 +22,7 @@ ENTIDADES = {"equipos", "usuarios", "suministros", "accesorios"}
 # ── Campos requeridos por entidad ──────────────────────────────────────────────
 REQUIRED: dict[str, list[str]] = {
     "equipos":     ["placa", "tipo_equipo", "criticidad", "confidencialidad"],
-    "usuarios":    ["nombre", "cargo", "proceso", "grupo_asignado", "area", "correo"],
+    "usuarios":    ["nombre", "cargo", "proceso", "grupo_asignado", "area"],
     "suministros": ["nombre", "tipo"],
     "accesorios":  ["nombre"],
 }
@@ -52,9 +53,26 @@ HEADERS: dict[str, list[str]] = {
 
 
 def _parse_csv(content: bytes) -> list[dict]:
-    text = content.decode("utf-8-sig").strip()   # utf-8-sig elimina el BOM de Excel
-    reader = csv.DictReader(io.StringIO(text))
-    return [row for row in reader]
+    # Excel puede guardar como UTF-8 (con BOM) o como ANSI (cp1252) según versión/configuración
+    try:
+        text = content.decode("utf-8-sig")  # utf-8-sig elimina el BOM de Excel
+    except UnicodeDecodeError:
+        text = content.decode("cp1252")
+    text = text.strip()
+
+    # Excel (según configuración regional) puede exportar CSV con ';' en vez de ','
+    sample = text[:4096]
+    delimiter = ","
+    try:
+        dialect = csv.Sniffer().sniff(sample, ",;\t|")
+        delimiter = dialect.delimiter
+    except Exception:
+        # Fallback simple cuando Sniffer no acierta
+        if ";" in sample and "," not in sample:
+            delimiter = ";"
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    return list(reader)
 
 
 def _s(v) -> str:
@@ -69,6 +87,8 @@ def _normalize_header(h: str) -> str:
     if h is None:
         return ""
     s = h.strip().lower()
+    # Quita tildes/diacríticos: "Área" -> "Area"
+    s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
     s = re.sub(r"\s+", "_", s)
     s = re.sub(r"[^a-z0-9_]+", "", s)
     return s
@@ -207,7 +227,8 @@ async def descargar_plantilla(entidad: str):
 
     headers_row = HEADERS[entidad]
     output = io.StringIO()
-    writer = csv.writer(output)
+    # Delimitador ';' suele abrirse en columnas correctamente en Excel (ES)
+    writer = csv.writer(output, delimiter=";")
     writer.writerow(headers_row)
 
     # Fila de ejemplo

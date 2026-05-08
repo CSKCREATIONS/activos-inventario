@@ -12,7 +12,7 @@ import type { Equipo, TipoEquipo, EstadoEquipo, Criticidad, Confidencialidad } f
 import { ActivoDetalle } from './ActivoDetalle';
 import { equiposApi } from '../../../services/api';
 
-const TIPOS_CON_HV: TipoEquipo[] = ['Laptop', 'Desktop'];
+const TIPOS_CON_HV: TipoEquipo[] = ['Laptop', 'Desktop', 'All-in-one'];
 
 async function descargarHojaVida(equipo: Equipo) {
   const blob = await equiposApi.getHojaVidaPdf(equipo.id);
@@ -24,7 +24,7 @@ async function descargarHojaVida(equipo: Equipo) {
   URL.revokeObjectURL(url);
 }
 
-const TIPOS: TipoEquipo[] = ['Laptop','Desktop','Tablet','Impresora','Celular','Monitor','Servidor','Switch','Router','UPS','Otro'];
+const TIPOS: TipoEquipo[] = ['Laptop','Desktop','All-in-one','Tablet','Impresora','Celular','Monitor','Servidor','Switch','Router','UPS','Otro'];
 const ESTADOS: EstadoEquipo[] = ['Disponible','Asignado','Dañado','Baja','En revisión','Rentado'];
 const CRITICIDADES: Criticidad[] = ['Baja','Media','Alta','Crítica'];
 const CONF: Confidencialidad[] = ['Pública','Interna','Confidencial','Restringida'];
@@ -166,7 +166,7 @@ export function ActivosPage() {
           <Field label="Observaciones" value={form.observaciones ?? ''} onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))} className="sm:col-span-2" />
 
           {/* ── Campos Hoja de Vida (solo Laptop / Desktop) ── */}
-          {(form.tipo_equipo === 'Laptop' || form.tipo_equipo === 'Desktop') && (
+          {(form.tipo_equipo === 'Laptop' || form.tipo_equipo === 'Desktop' || form.tipo_equipo === 'All-in-one') && (
             <>
               <div className="sm:col-span-2">
                 <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide border-t border-blue-100 pt-3 mb-3">

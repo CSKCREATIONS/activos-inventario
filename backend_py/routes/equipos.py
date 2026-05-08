@@ -7,6 +7,7 @@ from models.equipo import EquipoModel
 from models.documento import DocumentoModel
 from utils.serializer import serialize
 from utils.hoja_vida_pdf import generar_hoja_vida_pdf
+from utils.files import safe_filename
 
 UPLOADS_DIR = os.getenv("UPLOADS_DIR", "uploads")
 TIPOS_CON_HV = {"Laptop", "Desktop", "All-in-one"}
@@ -58,7 +59,7 @@ async def get_hoja_vida_pdf(id: str):
 
     # Guardar en disco
     os.makedirs(UPLOADS_DIR, exist_ok=True)
-    filename = f"hoja_vida_{equipo['placa']}.pdf"
+    filename = safe_filename(f"hoja_vida_{equipo['placa']}.pdf", default="hoja_vida.pdf")
     filepath = os.path.join(UPLOADS_DIR, filename)
     with open(filepath, "wb") as f:
         f.write(pdf_bytes)
@@ -68,7 +69,7 @@ async def get_hoja_vida_pdf(id: str):
     # Registrar/actualizar en documentos
     existing = await DocumentoModel.find_all(tipo="Hoja de vida", equipo_id=id)
     if not existing:
-        await DocumentoModel.create({
+        doc = await DocumentoModel.create({
             "nombre":      f"Hoja de vida {equipo['placa']}",
             "tipo":        "Hoja de vida",
             "equipo_id":   id,
@@ -77,12 +78,26 @@ async def get_hoja_vida_pdf(id: str):
             "cargado_por": "Sistema",
             "version":     1,
         })
+        if doc:
+            await DocumentoModel.upsert_archivo(
+                doc["id"],
+                filename=filename,
+                mime_type="application/pdf",
+                contenido=pdf_bytes,
+            )
     else:
-        await DocumentoModel.update(existing[0]["id"], {
+        doc = await DocumentoModel.update(existing[0]["id"], {
             "url":        file_url,
             "fecha_carga": date.today().isoformat(),
             "version":    (existing[0].get("version") or 1) + 1,
         })
+        if doc:
+            await DocumentoModel.upsert_archivo(
+                doc["id"],
+                filename=filename,
+                mime_type="application/pdf",
+                contenido=pdf_bytes,
+            )
 
     return Response(
         content=pdf_bytes,
@@ -121,11 +136,11 @@ async def create(body: dict):
             try:
                 pdf_bytes = generar_hoja_vida_pdf(dict(nuevo), [])
                 os.makedirs(UPLOADS_DIR, exist_ok=True)
-                filename = f"hoja_vida_{nuevo['placa']}.pdf"
+                filename = safe_filename(f"hoja_vida_{nuevo['placa']}.pdf", default="hoja_vida.pdf")
                 filepath = os.path.join(UPLOADS_DIR, filename)
                 with open(filepath, "wb") as f:
                     f.write(pdf_bytes)
-                await DocumentoModel.create({
+                doc = await DocumentoModel.create({
                     "nombre":      f"Hoja de vida {nuevo['placa']}",
                     "tipo":        "Hoja de vida",
                     "equipo_id":   nuevo["id"],
@@ -134,6 +149,13 @@ async def create(body: dict):
                     "cargado_por": "Sistema",
                     "version":     1,
                 })
+                if doc:
+                    await DocumentoModel.upsert_archivo(
+                        doc["id"],
+                        filename=filename,
+                        mime_type="application/pdf",
+                        contenido=pdf_bytes,
+                    )
             except Exception:
                 pass  # No bloquear la creación si falla el PDF
 

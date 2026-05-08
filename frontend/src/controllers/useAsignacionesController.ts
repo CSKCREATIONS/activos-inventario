@@ -76,6 +76,7 @@ export function useAsignacionesController() {
     equipo_id: string;
     observaciones?: string;
     fecha_asignacion: string;
+    accesorios_entregados?: string[];
   }) => {
     try {
       const res = await asignacionesApi.create(data);
@@ -109,6 +110,34 @@ export function useAsignacionesController() {
     }
   };
 
+  const descargarBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const descargarActa = async (asignacionId: string) => {
+    try {
+      const { blob, filename } = await asignacionesApi.downloadActa(asignacionId);
+      descargarBlob(blob, filename);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al descargar acta.');
+    }
+  };
+
+  const descargarHojaVida = async (equipoId: string, placa?: string) => {
+    try {
+      const blob = await equiposApi.getHojaVidaPdf(equipoId);
+      const safePlaca = (placa ?? equipoId).toString().replaceAll(/[^a-zA-Z0-9_-]+/g, '_');
+      descargarBlob(blob, `hoja_vida_${safePlaca}.pdf`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al descargar hoja de vida.');
+    }
+  };
+
   return {
     asignaciones: asignacionesFiltradas,
     totalAsignaciones: asignaciones.length,
@@ -125,6 +154,8 @@ export function useAsignacionesController() {
     usuarios,
     crearAsignacion,
     registrarDevolucion,
+    descargarActa,
+    descargarHojaVida,
     updateAsignacion,
     loading,
     error,

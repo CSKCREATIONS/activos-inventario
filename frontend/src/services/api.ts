@@ -36,6 +36,18 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return json;
 }
 
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  // attachment; filename="foo.pdf"
+  const m = /filename\*?=(?:UTF-8''|")?([^;"\n]+)"?/i.exec(header);
+  if (!m?.[1]) return null;
+  try {
+    return decodeURIComponent(m[1]);
+  } catch {
+    return m[1];
+  }
+}
+
 function buildUrl(base: string, params?: Record<string, string | undefined>) {
   if (!params) return base;
   const q = new URLSearchParams(
@@ -75,7 +87,9 @@ export const equiposApi = {
     request<{ message: string }>(`/equipos/${id}`, { method: 'DELETE' }),
   /** Genera y descarga la Hoja de Vida en PDF. Devuelve un Blob. */
   getHojaVidaPdf: async (id: string): Promise<Blob> => {
-    const res = await fetch(`${BASE}/equipos/${id}/hoja-vida-pdf`);
+    const res = await fetch(`${BASE}/equipos/${id}/hoja-vida-pdf`, {
+      headers: getAuthHeader(),
+    });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       throw new Error((j as { message?: string }).message ?? `Error ${res.status}`);
@@ -91,12 +105,26 @@ export const asignacionesApi = {
     request<{ data: Asignacion[]; total: number; activas: number }>(buildUrl('/asignaciones', params)),
   getById: (id: string) => request<{ data: Asignacion }>(`/asignaciones/${id}`),
   getEquiposDisponibles: () => request<{ data: Equipo[] }>('/asignaciones/equipos-disponibles'),
-  create: (body: { usuario_id: string; equipo_id: string; fecha_asignacion: string; observaciones?: string }) =>
+  create: (body: { usuario_id: string; equipo_id: string; fecha_asignacion: string; observaciones?: string; accesorios_entregados?: string[] }) =>
     request<{ data: Asignacion }>('/asignaciones', { method: 'POST', body: JSON.stringify(body) }),
   update: (id: string, body: Partial<Asignacion>) =>
     request<{ data: Asignacion }>(`/asignaciones/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   devolucion: (id: string) =>
     request<{ data: Asignacion }>(`/asignaciones/${id}/devolucion`, { method: 'POST' }),
+
+  /** Genera/descarga el Acta de Entrega en PDF. Devuelve Blob + filename. */
+  downloadActa: async (id: string): Promise<{ blob: Blob; filename: string }> => {
+    const res = await fetch(`${BASE}/asignaciones/${id}/acta-pdf`, {
+      headers: getAuthHeader(),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error((j as { detail?: string; message?: string }).detail ?? (j as { message?: string }).message ?? `Error ${res.status}`);
+    }
+    const blob = await res.blob();
+    const filename = filenameFromContentDisposition(res.headers.get('Content-Disposition')) ?? `acta_${id}.pdf`;
+    return { blob, filename };
+  },
 };
 
 // ─── Accesorios ───────────────────────────────────────────────────────────────
@@ -120,7 +148,7 @@ export const documentosApi = {
     request<{ data: Documento[]; total: number }>(buildUrl('/documentos', params)),
   getById: (id: string) => request<{ data: Documento }>(`/documentos/${id}`),
   create: (body: FormData) =>
-    fetch(`${BASE}/documentos`, { method: 'POST', body }).then(async (r) => {
+    fetch(`${BASE}/documentos`, { method: 'POST', headers: getAuthHeader(), body }).then(async (r) => {
       const j = await r.json();
       if (!r.ok) throw new Error(j.message ?? `Error ${r.status}`);
       return j as { data: Documento };
@@ -129,6 +157,18 @@ export const documentosApi = {
     request<{ data: Documento }>(`/documentos/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   remove: (id: string) =>
     request<{ message: string }>(`/documentos/${id}`, { method: 'DELETE' }),
+
+  /** Descarga el archivo del documento (BLOB desde BD o fallback uploads). */
+  download: async (id: string): Promise<{ blob: Blob; filename: string } > => {
+    const res = await fetch(`${BASE}/documentos/${id}/download`, { headers: getAuthHeader() });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error((j as { detail?: string; message?: string }).detail ?? (j as { message?: string }).message ?? `Error ${res.status}`);
+    }
+    const blob = await res.blob();
+    const filename = filenameFromContentDisposition(res.headers.get('Content-Disposition')) ?? `documento_${id}`;
+    return { blob, filename };
+  },
 };
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -230,6 +270,26 @@ export const importarApi = {
     return json as ImportarResult;
   },
   descargarPlantilla: (entidad: EntidadImportable) => {
-    window.open(`${BASE}/importar/${entidad}/plantilla`, '_blank');
+    // Descargar usando fetch para poder enviar Authorization header
+    fetch(`${BASE}/importar/${entidad}/plantilla`, { headers: getAuthHeader() })
+      .then(async (res) => {
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error((j as { detail?: string; message?: string }).detail ?? (j as { message?: string }).message ?? `Error ${res.status}`);
+        }
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `plantilla_${entidad}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch((e) => {
+        // No UI global aquí: la vista puede capturar/mostrar si lo requiere
+        console.error(e);
+      });
   },
 };

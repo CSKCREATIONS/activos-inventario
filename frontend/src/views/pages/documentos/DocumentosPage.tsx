@@ -6,6 +6,7 @@ import {
 } from '../../components/ui/index';
 import { Plus, FileText, Download } from 'lucide-react';
 import type { TipoDocumento } from '../../../models/types/index';
+import { documentosApi } from '../../../services/api';
 
 const TIPOS: TipoDocumento[] = ['Acta','Hoja de vida','Factura','Garantía','Contrato','Manual','Otro'];
 
@@ -68,7 +69,21 @@ export function DocumentosPage() {
                   <Td>{d.fecha_carga}</Td>
                   <Td>{d.cargado_por ?? '—'}</Td>
                   <Td>
-                    <Button variant="ghost" size="sm" icon={<Download size={14} />} onClick={() => window.open(d.url, '_blank')}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<Download size={14} />}
+                      onClick={() => {
+                        documentosApi.download(d.id).then(({ blob, filename }) => {
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = filename;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }).catch(console.error);
+                      }}
+                    >
                       Descargar
                     </Button>
                   </Td>

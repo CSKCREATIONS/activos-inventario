@@ -1,6 +1,6 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from config.db import test_connection, close_pool
 from routes import usuarios, equipos, asignaciones, accesorios, documentos, dashboard, susuarios, suministros, auth, licencias, importar
+from routes.auth import get_current_user
 
 load_dotenv()
 
@@ -37,17 +38,23 @@ app.add_middleware(
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 # ─── Routers ──────────────────────────────────────────────
-app.include_router(usuarios.router, prefix="/api/usuarios", tags=["Usuarios"])
-app.include_router(equipos.router, prefix="/api/equipos", tags=["Equipos"])
-app.include_router(asignaciones.router, prefix="/api/asignaciones", tags=["Asignaciones"])
-app.include_router(accesorios.router, prefix="/api/accesorios", tags=["Accesorios"])
-app.include_router(documentos.router, prefix="/api/documentos", tags=["Documentos"])
-app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
-app.include_router(auth.router,         prefix="/api/auth",        tags=["Auth"])
-app.include_router(susuarios.router,    prefix="/api/Susuarios",    tags=["UsuariosSistema"])
-app.include_router(suministros.router,  prefix="/api/suministros", tags=["Suministros"])
-app.include_router(licencias.router,    prefix="/api/licencias",   tags=["Licencias"])
-app.include_router(importar.router,     prefix="/api/importar",    tags=["Importar CSV"])
+protected = [Depends(get_current_user)]
+
+app.include_router(usuarios.router, prefix="/api/usuarios", tags=["Usuarios"], dependencies=protected)
+app.include_router(equipos.router, prefix="/api/equipos", tags=["Equipos"], dependencies=protected)
+app.include_router(asignaciones.router, prefix="/api/asignaciones", tags=["Asignaciones"], dependencies=protected)
+app.include_router(accesorios.router, prefix="/api/accesorios", tags=["Accesorios"], dependencies=protected)
+app.include_router(documentos.router, prefix="/api/documentos", tags=["Documentos"], dependencies=protected)
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"], dependencies=protected)
+
+# Endpoints públicos: login/token + health
+app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
+
+# También protegidos
+app.include_router(susuarios.router, prefix="/api/Susuarios", tags=["UsuariosSistema"], dependencies=protected)
+app.include_router(suministros.router, prefix="/api/suministros", tags=["Suministros"], dependencies=protected)
+app.include_router(licencias.router, prefix="/api/licencias", tags=["Licencias"], dependencies=protected)
+app.include_router(importar.router, prefix="/api/importar", tags=["Importar CSV"], dependencies=protected)
 
 
 # ─── Health check ─────────────────────────────────────────

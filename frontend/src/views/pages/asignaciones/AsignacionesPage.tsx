@@ -5,18 +5,60 @@ import { useAsignacionesController } from '../../../controllers/useAsignacionesC
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
-import { Plus, RotateCcw, Link2 } from 'lucide-react';
+import { Plus, RotateCcw, Link2, FileDown } from 'lucide-react';
+
+const ACCESORIOS_OPCIONES = ['Cargador', 'Mouse', 'Teclado', 'Monitor'];
+const ASIGNACION_VARIANT = {
+  Activa: 'green',
+  Devuelta: 'blue',
+  Extraviada: 'red',
+} as const;
 
 export function AsignacionesPage() {
   const ctrl = useAsignacionesController();
-  const [form, setForm] = useState({ usuario_id: '', equipo_id: '', fecha_asignacion: new Date().toISOString().split('T')[0], observaciones: '' });
+  const [form, setForm] = useState({
+    usuario_id: '',
+    equipo_id: '',
+    fecha_asignacion: new Date().toISOString().split('T')[0],
+    observaciones: '',
+    accesorios_entregados: [] as string[],
+  });
   const [error, setError] = useState('');
+  const [otrosAccesorios, setOtrosAccesorios] = useState('');
 
-  const handleCrear = () => {
+  const toggleAccesorio = (nombre: string) => {
+    setForm((f) => {
+      const existe = f.accesorios_entregados.includes(nombre);
+      return {
+        ...f,
+        accesorios_entregados: existe
+          ? f.accesorios_entregados.filter((x) => x !== nombre)
+          : [...f.accesorios_entregados, nombre],
+      };
+    });
+  };
+
+  const handleCrear = async () => {
     if (!form.usuario_id || !form.equipo_id) { setError('Usuario y equipo son requeridos.'); return; }
-    const resultado = ctrl.crearAsignacion(form);
+    const extras = otrosAccesorios
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const accesorios_entregados = Array.from(new Set([
+      ...form.accesorios_entregados,
+      ...extras,
+    ]));
+
+    const resultado = await ctrl.crearAsignacion({
+      usuario_id: form.usuario_id,
+      equipo_id: form.equipo_id,
+      fecha_asignacion: form.fecha_asignacion,
+      observaciones: form.observaciones,
+      accesorios_entregados,
+    });
     if (resultado.error) { setError(resultado.error); return; }
     setError('');
+    setOtrosAccesorios('');
   };
 
   return (
@@ -51,7 +93,21 @@ export function AsignacionesPage() {
           <option value="Extraviada">Extraviada</option>
         </select>
         <div className="sm:ml-auto">
-          <Button icon={<Plus size={16} />} onClick={() => { setForm({ usuario_id: '', equipo_id: '', fecha_asignacion: new Date().toISOString().split('T')[0], observaciones: '' }); ctrl.setModalAbierto(true); }} className="w-full sm:w-auto">
+          <Button
+            icon={<Plus size={16} />}
+            onClick={() => {
+              setForm({
+                usuario_id: '',
+                equipo_id: '',
+                fecha_asignacion: new Date().toISOString().split('T')[0],
+                observaciones: '',
+                accesorios_entregados: [],
+              });
+              setOtrosAccesorios('');
+              ctrl.setModalAbierto(true);
+            }}
+            className="w-full sm:w-auto"
+          >
             Nueva asignación
           </Button>
         </div>
@@ -86,14 +142,30 @@ export function AsignacionesPage() {
                   <Td>{a.fecha_asignacion}</Td>
                   <Td>{a.fecha_devolucion ?? <span className="text-emerald-600 font-medium">Activa</span>}</Td>
                   <Td>
-                    <Badge variant={a.estado === 'Activa' ? 'green' : a.estado === 'Devuelta' ? 'blue' : 'red'}>
+                    <Badge variant={ASIGNACION_VARIANT[a.estado] ?? 'gray'}>
                       {a.estado}
                     </Badge>
                   </Td>
                   <Td>
-                    <div className="flex gap-1">
-                      {a.acta_pdf && <Badge variant="blue">Acta</Badge>}
-                      {a.hoja_vida_pdf && <Badge variant="green">H.Vida</Badge>}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon={<FileDown size={12} />}
+                        onClick={() => ctrl.descargarActa(a.id)}
+                      >
+                        Acta
+                      </Button>
+                      {a.equipo_id && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          icon={<FileDown size={12} />}
+                          onClick={() => ctrl.descargarHojaVida(a.equipo_id, a.equipo?.placa)}
+                        >
+                          H.Vida
+                        </Button>
+                      )}
                     </div>
                   </Td>
                   <Td>
@@ -141,6 +213,33 @@ export function AsignacionesPage() {
             label="Observaciones"
             value={form.observaciones}
             onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))}
+          />
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-slate-700">Accesorios entregados</p>
+            <div className="grid grid-cols-2 gap-2">
+              {ACCESORIOS_OPCIONES.map((acc) => (
+                <label
+                  key={acc}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700"
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.accesorios_entregados.includes(acc)}
+                    onChange={() => toggleAccesorio(acc)}
+                    className="h-4 w-4"
+                  />
+                  {acc}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <Field
+            label="Otros accesorios (separados por coma)"
+            value={otrosAccesorios}
+            onChange={(e) => setOtrosAccesorios(e.target.value)}
+            placeholder="Ej: Base refrigerante, Guaya"
           />
         </div>
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
