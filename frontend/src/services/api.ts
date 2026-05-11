@@ -113,8 +113,9 @@ export const asignacionesApi = {
     request<{ data: Asignacion }>(`/asignaciones/${id}/devolucion`, { method: 'POST' }),
 
   /** Genera/descarga el Acta de Entrega en PDF. Devuelve Blob + filename. */
-  downloadActa: async (id: string): Promise<{ blob: Blob; filename: string }> => {
-    const res = await fetch(`${BASE}/asignaciones/${id}/acta-pdf`, {
+  downloadActa: async (id: string, force?: boolean): Promise<{ blob: Blob; filename: string }> => {
+    const url = buildUrl(`/asignaciones/${id}/acta-pdf`, force ? { force: 'true' } : undefined);
+    const res = await fetch(`${BASE}${url}`, {
       headers: getAuthHeader(),
     });
     if (!res.ok) {

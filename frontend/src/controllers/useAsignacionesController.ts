@@ -88,6 +88,27 @@ export function useAsignacionesController() {
       setAsignaciones(asigRes.data);
       setEquipos(eqRes.data);
       setModalAbierto(false);
+      // Intentar previsualizar el acta generada automáticamente
+      try {
+        // Si la respuesta de creación no trae id, buscarla entre las asignaciones recargadas
+        let createdId: string | undefined = res?.data?.id;
+        if (!createdId) {
+          const match = asigRes.data.find((a: any) => (
+            a.equipo_id === data.equipo_id &&
+            a.usuario_id === data.usuario_id &&
+            a.fecha_asignacion === data.fecha_asignacion &&
+            a.estado === 'Activa'
+          ));
+          createdId = match?.id;
+        }
+        if (createdId) {
+          const { blob } = await asignacionesApi.downloadActa(createdId, true);
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank');
+        }
+      } catch (err: unknown) {
+        // No bloquear la acción principal si la generación/previsualización falla
+      }
       return { error: null, data: res.data };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al crear asignación.';
@@ -128,6 +149,17 @@ export function useAsignacionesController() {
     }
   };
 
+  const previsualizarActa = async (asignacionId: string) => {
+    try {
+      // Forzar regeneración para asegurarnos de mostrar el acta rellena
+      const { blob } = await asignacionesApi.downloadActa(asignacionId, true);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al previsualizar acta.');
+    }
+  };
+
   const descargarHojaVida = async (equipoId: string, placa?: string) => {
     try {
       const blob = await equiposApi.getHojaVidaPdf(equipoId);
@@ -155,6 +187,7 @@ export function useAsignacionesController() {
     crearAsignacion,
     registrarDevolucion,
     descargarActa,
+    previsualizarActa,
     descargarHojaVida,
     updateAsignacion,
     loading,

@@ -5,7 +5,7 @@ import { useAsignacionesController } from '../../../controllers/useAsignacionesC
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
-import { Plus, RotateCcw, Link2, FileDown } from 'lucide-react';
+import { Plus, RotateCcw, Link2, FileDown, Eye } from 'lucide-react';
 
 const ACCESORIOS_OPCIONES = ['Cargador', 'Mouse', 'Teclado', 'Monitor'];
 const ASIGNACION_VARIANT = {
@@ -16,6 +16,19 @@ const ASIGNACION_VARIANT = {
 
 export function AsignacionesPage() {
   const ctrl = useAsignacionesController();
+  const formatDate = (v?: string | null) => {
+    if (!v) return '—';
+    try {
+      const d = new Date(v);
+      if (isNaN(d.getTime())) return v;
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch {
+      return v;
+    }
+  };
   const [form, setForm] = useState({
     usuario_id: '',
     equipo_id: '',
@@ -135,12 +148,18 @@ export function AsignacionesPage() {
             <tbody>
               {ctrl.asignaciones.map((a) => (
                 <tr key={a.id} className="hover:bg-slate-50 transition-colors">
-                  <Td className="font-medium">{a.usuario?.nombre ?? '—'}</Td>
-                  <Td>{a.usuario?.area ?? '—'}</Td>
-                  <Td className="font-mono text-blue-700">{a.equipo?.placa ?? '—'}</Td>
-                  <Td>{a.equipo?.tipo_equipo ?? '—'}</Td>
-                  <Td>{a.fecha_asignacion}</Td>
-                  <Td>{a.fecha_devolucion ?? <span className="text-emerald-600 font-medium">Activa</span>}</Td>
+                  <Td className="font-medium">
+                    <div>{a.usuario?.nombre ?? '—'}</div>
+                    <div className="text-xs text-slate-500">{a.usuario?.cargo ?? ''}</div>
+                  </Td>
+                    <Td>{a.usuario?.area ?? '—'}</Td>
+                    <Td className="font-mono text-blue-700">
+                      <div>{a.equipo?.placa ?? '—'}</div>
+                      <div className="text-xs text-slate-500">{[a.equipo?.marca, a.equipo?.modelo].filter(Boolean).join(' ')}</div>
+                    </Td>
+                    <Td>{a.equipo?.tipo_equipo ?? '—'}</Td>
+                    <Td>{formatDate(a.fecha_asignacion)}</Td>
+                    <Td>{a.fecha_devolucion ? formatDate(a.fecha_devolucion) : <span className="text-emerald-600 font-medium">Activa</span>}</Td>
                   <Td>
                     <Badge variant={ASIGNACION_VARIANT[a.estado] ?? 'gray'}>
                       {a.estado}
@@ -148,6 +167,14 @@ export function AsignacionesPage() {
                   </Td>
                   <Td>
                     <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon={<Eye size={12} />}
+                        onClick={() => ctrl.previsualizarActa(a.id)}
+                      >
+                        Previsualizar
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"

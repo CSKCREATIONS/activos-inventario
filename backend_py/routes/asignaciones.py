@@ -1,5 +1,6 @@
 import os
 from datetime import date
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -34,13 +35,25 @@ async def _generar_y_registrar_acta(
     *,
     accesorios_entregados: list[str],
     cargado_por: str,
+    rellenar: bool = True,
 ) -> tuple[bytes, str, str]:
-    pdf_bytes = generar_acta_entrega_pdf(
-        dict(asignacion),
-        accesorios_opciones=ACCESORIOS_OPCIONES,
-        accesorios_entregados=accesorios_entregados,
-        entregado_por=cargado_por,
-    )
+    # Si no queremos rellenar la plantilla, devolvemos los bytes crudos de la plantilla (si existe)
+    tpl_paths = [
+        Path('Doc') / 'Julian Castro Sena Acta.pdf',
+    ]
+    pdf_bytes = None
+    if not rellenar:
+        for p in tpl_paths:
+            if p.exists():
+                pdf_bytes = p.read_bytes()
+                break
+    if pdf_bytes is None:
+        pdf_bytes = generar_acta_entrega_pdf(
+            dict(asignacion),
+            accesorios_opciones=ACCESORIOS_OPCIONES,
+            accesorios_entregados=accesorios_entregados,
+            entregado_por=cargado_por,
+        )
 
     # Guardar en disco (fallback)
     os.makedirs(UPLOADS_DIR, exist_ok=True)
@@ -136,9 +149,9 @@ async def create(body: dict, current_user: dict = Depends(get_current_user)):
         cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
         accesorios = _normalize_accesorios(body.get("accesorios_entregados"))
 
-        # Intentar generar acta automáticamente
+        # Intentar generar acta automáticamente (guardar plantilla rellenada con datos)
         try:
-            await _generar_y_registrar_acta(nueva, accesorios_entregados=accesorios, cargado_por=cargado_por)
+            await _generar_y_registrar_acta(nueva, accesorios_entregados=accesorios, cargado_por=cargado_por, rellenar=True)
         except Exception:
             pass
 
@@ -160,7 +173,7 @@ async def create(body: dict, current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/{id}/acta-pdf")
-async def get_acta_pdf(id: str, current_user: dict = Depends(get_current_user)):
+async def get_acta_pdf(id: str, force: bool = Query(False), current_user: dict = Depends(get_current_user)):
     """Genera (o regenera) el Acta de Entrega en PDF, la almacena y la devuelve como descarga."""
     asignacion = await AsignacionModel.find_by_id(id)
     if not asignacion:
@@ -168,6 +181,25 @@ async def get_acta_pdf(id: str, current_user: dict = Depends(get_current_user)):
 
     cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
     accesorios = _normalize_accesorios(asignacion.get("accesorios_entregados"))
+    # Si ya existe un acta guardada para esta asignación y no pedimos regeneración, servir ese archivo
+    acta_url = asignacion.get('acta_pdf')
+    if not force and acta_url and acta_url.startswith('/uploads/'):
+        filename = acta_url.split('/uploads/')[-1]
+        filepath = os.path.join(UPLOADS_DIR, filename)
+        if os.path.exists(filepath):
+            with open(filepath, 'rb') as f:
+                pdf_bytes = f.read()
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Pragma": "no-cache",
+                    "X-Acta-From-Cache": "true",
+                    "X-Acta-Length": str(len(pdf_bytes)),
+                },
+            )
 
     pdf_bytes, filename, _url = await _generar_y_registrar_acta(
         asignacion,
@@ -178,7 +210,13 @@ async def get_acta_pdf(id: str, current_user: dict = Depends(get_current_user)):
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "X-Acta-Generated": "true",
+            "X-Acta-Length": str(len(pdf_bytes)),
+        },
     )
 
 
