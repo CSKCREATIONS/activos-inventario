@@ -101,15 +101,14 @@ POS = {
     # FUNCIONARIO
     # =========================
     "nombre": (305, 673),
-    "cargo": (308, 660),
-    "area": (175, 624),
+    "cargo": (310, 660),
 
     # =========================
     # EQUIPO
     # =========================
-    "equipo_qty": (255, 548),
-    "equipo_ref": (340, 548),
-    "equipo_activo": (520, 548),
+    "equipo_qty": (205, 614),
+    "equipo_ref": (345, 614),
+    "equipo_activo": (498, 614),
 
     # MONITOR
     "monitor_qty": (255, 530),
@@ -137,32 +136,35 @@ POS = {
     "lector_codigo_de_barras_activo": (520, 458),
 
     # IMPRESORA
-    "impresora_qty": (255, 440),
-    "impresora_ref": (340, 440),
-    "impresora_activo": (520, 440),
+    "impresora_qty": (255, 540),
+    "impresora_ref": (340, 540),
+    "impresora_activo": (520, 540),
 
     # =========================
     # ACCESORIOS
     # =========================
-    "regulador_qty": (255, 392),
-    "regulador_ref": (340, 392),
+    "regulador_qty": (205, 447),
+    "regulador_ref": (348, 474),
+    "equipo_activo": (498, 614),
 
-    "extension_qty": (255, 374),
-    "extension_ref": (340, 374),
+    "extension_qty": (205, 447),
+    "extension_ref": (350, 460),
 
-    "ups_qty": (255, 356),
-    "ups_ref": (340, 356),
+    "ups_qty": (205, 447),
+    "ups_ref": (365, 447),
+    "equipo_activo": (498, 614),
 
-    "telefono_qty": (255, 338),
-    "telefono_ref": (340, 338),
+    "telefono_qty": (205, 433),
+    "telefono_ref": (350, 433),
+    "equipo_activo": (498, 614),
 
-    "otros_qty": (255, 320),
-    "otros_ref": (340, 320),
+    "otros_qty": (255, 420),
+    "otros_ref": (340, 420),
 
     # =========================
     # OBSERVACIONES
     # =========================
-    "obs": (40, 255),
+    "obs": (40, 392),
 }
 
 
@@ -586,6 +588,8 @@ if __name__ == "__main__":
         accesorios_entregados=[
             "REGULADOR",
             "UPS",
+            "EXTENSIÓN",
+            "TELÉFONO",
         ],
         entregado_por="Administrador TI",
     )

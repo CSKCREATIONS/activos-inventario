@@ -32,9 +32,9 @@ const CONF: Confidencialidad[] = ['Pública','Interna','Confidencial','Restringi
 export function ActivosPage() {
   const ctrl = useActivosController();
   const [vistaDetalle, setVistaDetalle] = useState<string | null>(null);
-  const [form, setForm] = useState<Partial<Equipo>>({});
+  const [form, setForm] = useState<Partial<Equipo>>({ estado: 'Disponible', es_rentado: false });
 
-  const handleAbrirCrear = () => { setForm({}); ctrl.abrirCrear(); };
+  const handleAbrirCrear = () => { setForm({ estado: 'Disponible', es_rentado: false }); ctrl.abrirCrear(); };
   const handleAbrirEditar = (e: Equipo) => { setForm(e); ctrl.abrirEditar(e); };
   const handleGuardar = () => {
     if (!form.placa || !form.tipo_equipo || !form.criticidad || !form.confidencialidad || !form.estado) return;
