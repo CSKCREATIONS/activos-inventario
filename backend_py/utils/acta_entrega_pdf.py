@@ -91,18 +91,17 @@ except Exception:
 POS = {
 
     # Fecha
-    "fecha": (170, 700),
+    "fecha": (310, 705),
 
     # =========================
     # ENTREGADO POR
     # =========================
-    "entregado_por": (400, 700),
 
     # =========================
     # FUNCIONARIO
     # =========================
-    "nombre": (175, 660),
-    "cargo": (175, 642),
+    "nombre": (305, 673),
+    "cargo": (308, 660),
     "area": (175, 624),
 
     # =========================
@@ -335,22 +334,6 @@ def generar_acta_entrega_pdf(
         )
 
     # ─────────────────────────
-    # ENTREGADO POR
-    # ─────────────────────────
-
-    if entregado_por:
-
-        _text(
-            oc,
-            entregado_por,
-            POS["entregado_por"][0],
-            POS["entregado_por"][1],
-            180,
-            12,
-            size=9
-        )
-
-    # ─────────────────────────
     # FUNCIONARIO
     # ─────────────────────────
 
@@ -382,17 +365,6 @@ def generar_acta_entrega_pdf(
             size=9
         )
 
-    if area:
-
-        _text(
-            oc,
-            area,
-            POS["area"][0],
-            POS["area"][1],
-            320,
-            12,
-            size=8
-        )
 
     # ─────────────────────────
     # EQUIPOS
