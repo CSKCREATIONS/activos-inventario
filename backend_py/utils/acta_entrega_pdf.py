@@ -107,38 +107,38 @@ POS = {
     # EQUIPO
     # =========================
     "equipo_qty": (205, 614),
-    "equipo_ref": (345, 614),
+    "equipo_ref": (330, 614),
     "equipo_activo": (498, 614),
 
     # MONITOR
-    "monitor_qty": (255, 530),
-    "monitor_ref": (340, 530),
-    "monitor_activo": (520, 530),
+    "monitor_qty": (205, 600),
+    "monitor_ref": (330, 600),
+    "monitor_activo": (498, 600),
 
     # TECLADO
-    "teclado_qty": (255, 512),
-    "teclado_ref": (340, 512),
-    "teclado_activo": (520, 512),
+    "teclado_qty": (205, 588),
+    "teclado_ref": (330, 588),
+    "teclado_activo": (498, 588),
 
     # MOUSE
-    "mouse_qty": (255, 494),
-    "mouse_ref": (340, 494),
-    "mouse_activo": (520, 494),
+    "mouse_qty": (205, 574),
+    "mouse_ref": (330, 574),
+    "mouse_activo": (498, 574),
 
     # PARLANTES
-    "parlantes_qty": (255, 476),
-    "parlantes_ref": (340, 476),
-    "parlantes_activo": (520, 476),
+    "parlantes_qty": (205, 560),
+    "parlantes_ref": (330, 560),
+    "parlantes_activo": (498, 560),
 
     # LECTOR
-    "lector_codigo_de_barras_qty": (255, 458),
-    "lector_codigo_de_barras_ref": (340, 458),
-    "lector_codigo_de_barras_activo": (520, 458),
+    "lector_codigo_de_barras_qty": (205, 540),
+    "lector_codigo_de_barras_ref": (330, 540),
+    "lector_codigo_de_barras_activo": (498, 540),
 
     # IMPRESORA
-    "impresora_qty": (255, 540),
-    "impresora_ref": (340, 540),
-    "impresora_activo": (520, 540),
+    "impresora_qty": (205, 524),
+    "impresora_ref": (330, 524),
+    "impresora_activo": (498, 524),
 
     # =========================
     # ACCESORIOS
@@ -158,13 +158,13 @@ POS = {
     "telefono_ref": (350, 433),
     "equipo_activo": (498, 614),
 
-    "otros_qty": (255, 420),
+    "otros_qty": (205, 420),
     "otros_ref": (340, 420),
 
     # =========================
     # OBSERVACIONES
     # =========================
-    "obs": (40, 392),
+    "obs": (50, 392),
 }
 
 
@@ -558,26 +558,106 @@ def generar_acta_entrega_pdf(
 
 
 # ─────────────────────────────────────────────
-# TEST
+# TEST ROBUSTO
 # ─────────────────────────────────────────────
 
 if __name__ == "__main__":
 
     datos = {
-        "usuario_nombre": "Julian Castro",
-        "cargo": "Auxiliar TI",
-        "area": "Tecnologia",
+
+        # =========================
+        # FUNCIONARIO
+        # =========================
+
+        "usuario_nombre": "Julian Andres Castro Rodriguez",
+        "cargo": "Auxiliar de Tecnologia e Infraestructura",
+        "area": "Departamento de Tecnologia",
+
+        # =========================
+        # FECHAS
+        # =========================
+
         "fecha_asignacion": "2026-05-15",
+
+        # =========================
+        # EQUIPO PRINCIPAL
+        # =========================
+
+        "tipo_equipo": "Portatil",
         "placa": "PC-001",
-        "serial": "SN123456",
+        "serial": "SN123456789",
         "marca": "Dell",
         "modelo": "Optiplex 7090",
-        "tipo_equipo": "Portatil",
-        "observaciones": "Equipo entregado en buen estado.",
+
+        # =========================
+        # EQUIPO
+        # =========================
+
+        "equipo_cantidad": "1",
+        "equipo_modelo": "Optiplex 7090",
+        "equipo_placa": "PC-001",
+
+        # =========================
+        # MONITOR
+        # =========================
+
+        "monitor_cantidad": "2",
+        "monitor_modelo": "Dell E2423H 24",
+        "monitor_placa": "MON-442",
+
+        # =========================
+        # TECLADO
+        # =========================
+
+        "teclado_cantidad": "1",
+        "teclado_modelo": "Logitech K120 USB",
+        "teclado_placa": "TEC-221",
+
+        # =========================
+        # MOUSE
+        # =========================
+
+        "mouse_cantidad": "1",
+        "mouse_modelo": "Logitech M90",
+        "mouse_placa": "MOU-876",
+
+        # =========================
+        # PARLANTES
+        # =========================
+
+        "parlantes_cantidad": "1",
+        "parlantes_modelo": "Genius SP-HF180",
+        "parlantes_placa": "PAR-765",
+
+        # =========================
+        # LECTOR CODIGO BARRAS
+        # =========================
+
+        "lector_codigo_de_barras_cantidad": "1",
+        "lector_codigo_de_barras_modelo": "Honeywell Voyager XP 1470G",
+        "lector_codigo_de_barras_placa": "LECT-555",
+
+        # =========================
+        # IMPRESORA
+        # =========================
+
+        "impresora_cantidad": "1",
+        "impresora_modelo": "HP LaserJet Pro M404dn",
+        "impresora_placa": "IMP-999",
+
+        # =========================
+        # OBSERVACIONES
+        # =========================
+
+        "observaciones": (
+            "Equipo entregado en perfecto estado Se realiza entrega con accesorios completos cargador original monitor adicional y periféricos funcionando correctamente. Usuario recibe conforme."
+        ),
     }
 
     pdf_bytes = generar_acta_entrega_pdf(
+
         datos,
+
         accesorios_opciones=[
             "REGULADOR",
             "EXTENSIÓN",
@@ -585,13 +665,16 @@ if __name__ == "__main__":
             "TELÉFONO",
             "OTROS",
         ],
+
         accesorios_entregados=[
             "REGULADOR",
             "UPS",
             "EXTENSIÓN",
             "TELÉFONO",
+            "OTROS",
         ],
-        entregado_por="Administrador TI",
+
+        entregado_por="Coordinador de Tecnologia",
     )
 
     output = "test_acta.pdf"
@@ -599,6 +682,7 @@ if __name__ == "__main__":
     with open(output, "wb") as f:
         f.write(pdf_bytes)
 
-    print(f"PDF generado: {output}")
+    print(f"\nPDF generado correctamente: {output}")
 
+    # Abrir automáticamente
     os.startfile(output)
