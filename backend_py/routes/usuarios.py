@@ -36,7 +36,7 @@ async def get_perfil(id: str):
 
 @router.post("", status_code=201)
 async def create(body: dict):
-    required = ["nombre", "cargo", "proceso", "grupo_asignado", "area", "correo"]
+    required = ["nombre", "area", "correo"]
     missing = [f for f in required if not body.get(f)]
     if missing:
         raise HTTPException(

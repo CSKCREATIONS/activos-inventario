@@ -65,7 +65,7 @@ EQUIPOS_HEADERS = [
 
 USUARIOS_HEADERS = [
     "nombre", "cargo", "proceso", "grupo_asignado", "area",
-    "correo", "ubicacion", "activo",
+    "correo", "ubicacion", "sede", "activo",
 ]
 
 # Columnas globales: col_index → (destino, campo)

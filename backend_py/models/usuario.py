@@ -50,8 +50,8 @@ class UsuarioModel:
             async with conn.cursor() as cur:
                 await cur.execute(
                     """INSERT INTO usuarios
-                       (id, nombre, cargo, proceso, grupo_asignado, area, correo, ubicacion, activo, fecha_registro)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                       (id, nombre, cargo, proceso, grupo_asignado, area, correo, ubicacion, sede, activo, fecha_registro)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     [
                         new_id,
                         data["nombre"],
@@ -61,6 +61,7 @@ class UsuarioModel:
                         data["area"],
                         data.get("correo"),
                         data.get("ubicacion"),
+                        data.get("sede"),
                         1 if data.get("activo", True) else 0,
                         fecha_registro,
                     ],
@@ -69,7 +70,7 @@ class UsuarioModel:
 
     @staticmethod
     async def update(id: str, data: dict) -> dict | None:
-        allowed = ["nombre", "cargo", "proceso", "grupo_asignado", "area", "correo", "ubicacion", "activo"]
+        allowed = ["nombre", "cargo", "proceso", "grupo_asignado", "area", "correo", "ubicacion", "sede", "activo"]
         fields, values = [], []
         for key in allowed:
             if key in data:

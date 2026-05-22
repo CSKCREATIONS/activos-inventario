@@ -29,6 +29,7 @@ export function UsuarioDetalle({ usuarioId, onVolver }: Props) {
               <span className="flex items-center gap-1"><Mail size={14} />{usuario.correo}</span>
               {usuario.ubicacion && <span className="flex items-center gap-1"><MapPin size={14} />{usuario.ubicacion}</span>}
               <Badge variant="indigo">{usuario.area}</Badge>
+              {usuario.sede && <Badge variant="amber">{usuario.sede}</Badge>}
               <Badge variant={usuario.activo ? 'green' : 'gray'}>{usuario.activo ? 'Activo' : 'Inactivo'}</Badge>
             </div>
           </div>

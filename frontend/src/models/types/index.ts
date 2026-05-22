@@ -21,6 +21,7 @@ export interface Usuario {
   area: string;
   correo: string;
   ubicacion?: string;
+  sede?: string;
   activo: boolean;
   fecha_registro: string;
 }

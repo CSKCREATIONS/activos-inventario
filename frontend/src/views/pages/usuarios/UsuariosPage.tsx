@@ -4,7 +4,7 @@ import { useUsuariosController } from '../../../controllers/useUsuariosControlle
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, Badge
 } from '../../components/ui/index';
-import { Plus, Pencil, Eye, Users } from 'lucide-react';
+import { Plus, Pencil, Eye, Users, AlertCircle } from 'lucide-react';
 import type { Usuario } from '../../../models/types/index';
 import { UsuarioDetalle } from './UsuarioDetalle';
 
@@ -12,9 +12,22 @@ export function UsuariosPage() {
   const ctrl = useUsuariosController();
   const [vistaDetalle, setVistaDetalle] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<Usuario>>({ activo: true });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const canSave = form.nombre && form.area && form.correo;
 
   const handleGuardar = () => {
-    if (!form.nombre || !form.area || !form.correo) return;
+    const newErrors: Record<string, string> = {};
+    if (!form.nombre) newErrors.nombre = "El nombre es requerido";
+    if (!form.area) newErrors.area = "El área es requerida";
+    if (!form.correo) newErrors.correo = "El correo es requerido";
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
+    setErrors({});
     if (ctrl.modoEdicion && ctrl.selectedUsuario) {
       ctrl.editarUsuario(ctrl.selectedUsuario.id, form);
     } else {
@@ -39,7 +52,7 @@ export function UsuariosPage() {
           {ctrl.areas.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
         <div className="sm:ml-auto">
-          <Button icon={<Plus size={16} />} onClick={() => { setForm({ activo: true }); ctrl.abrirCrear(); }} className="w-full sm:w-auto">
+          <Button icon={<Plus size={16} />} onClick={() => { setForm({ activo: true }); setErrors({}); ctrl.abrirCrear(); }} className="w-full sm:w-auto">
             Nuevo usuario
           </Button>
         </div>
@@ -59,6 +72,7 @@ export function UsuariosPage() {
                 <Th>Nombre</Th>
                 <Th>Cargo</Th>
                 <Th>Área</Th>
+                <Th>Sede</Th>
                 <Th>Proceso</Th>
                 <Th>Correo</Th>
                 <Th>Estado</Th>
@@ -78,6 +92,7 @@ export function UsuariosPage() {
                   </Td>
                   <Td>{u.cargo}</Td>
                   <Td><Badge variant="indigo">{u.area}</Badge></Td>
+                  <Td>{u.sede || '-'}</Td>
                   <Td>{u.proceso}</Td>
                   <Td className="text-blue-600">{u.correo}</Td>
                   <Td>
@@ -86,7 +101,7 @@ export function UsuariosPage() {
                   <Td>
                     <div className="flex items-center gap-1">
                       <Button variant="ghost" size="sm" icon={<Eye size={14} />} onClick={() => setVistaDetalle(u.id)}>Ver</Button>
-                      <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => { setForm(u); ctrl.abrirEditar(u); }}>Editar</Button>
+                      <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => { setForm(u); setErrors({}); ctrl.abrirEditar(u); }}>Editar</Button>
                     </div>
                   </Td>
                 </tr>
@@ -98,17 +113,33 @@ export function UsuariosPage() {
 
       <Modal
         abierto={ctrl.modalAbierto}
-        onCerrar={ctrl.cerrarModal}
+        onCerrar={() => { ctrl.cerrarModal(); setErrors({}); }}
         titulo={ctrl.modoEdicion ? `Editar usuario – ${ctrl.selectedUsuario?.nombre}` : 'Registrar nuevo usuario'}
         size="lg"
       >
+        {ctrl.error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+            <AlertCircle size={18} className="text-red-600 mt-0.5 shrink-0" />
+            <span className="text-red-700 text-sm">{ctrl.error}</span>
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Nombre completo *" value={form.nombre ?? ''} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} className="sm:col-span-2" />
+          <div className="sm:col-span-2">
+            <Field label="Nombre completo *" value={form.nombre ?? ''} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} className={errors.nombre ? "border-red-500" : ""} />
+            {errors.nombre && <p className="text-red-600 text-xs mt-1">{errors.nombre}</p>}
+          </div>
           <Field label="Cargo" value={form.cargo ?? ''} onChange={(e) => setForm((f) => ({ ...f, cargo: e.target.value }))} />
-          <Field label="Área *" value={form.area ?? ''} onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))} />
+          <div className={errors.area ? "border border-red-500 rounded-lg p-2" : ""}>
+            <Field label="Área *" value={form.area ?? ''} onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))} />
+            {errors.area && <p className="text-red-600 text-xs mt-1">{errors.area}</p>}
+          </div>
+          <Field label="Sede" value={form.sede ?? ''} onChange={(e) => setForm((f) => ({ ...f, sede: e.target.value }))} />
           <Field label="Proceso" value={form.proceso ?? ''} onChange={(e) => setForm((f) => ({ ...f, proceso: e.target.value }))} />
           <Field label="Grupo asignado" value={form.grupo_asignado ?? ''} onChange={(e) => setForm((f) => ({ ...f, grupo_asignado: e.target.value }))} />
-          <Field label="Correo *" type="email" value={form.correo ?? ''} onChange={(e) => setForm((f) => ({ ...f, correo: e.target.value }))} />
+          <div className={errors.correo ? "border border-red-500 rounded-lg p-2" : ""}>
+            <Field label="Correo *" type="email" value={form.correo ?? ''} onChange={(e) => setForm((f) => ({ ...f, correo: e.target.value }))} />
+            {errors.correo && <p className="text-red-600 text-xs mt-1">{errors.correo}</p>}
+          </div>
           <Field label="Ubicación" value={form.ubicacion ?? ''} onChange={(e) => setForm((f) => ({ ...f, ubicacion: e.target.value }))} />
           <div className="flex items-center gap-2 sm:col-span-2">
             <input type="checkbox" id="uactivo" checked={form.activo ?? true} onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))} className="rounded" />
@@ -116,8 +147,8 @@ export function UsuariosPage() {
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
-          <Button variant="outline" onClick={ctrl.cerrarModal}>Cancelar</Button>
-          <Button onClick={handleGuardar}>{ctrl.modoEdicion ? 'Guardar cambios' : 'Registrar usuario'}</Button>
+          <Button variant="outline" onClick={() => { ctrl.cerrarModal(); setErrors({}); }}>Cancelar</Button>
+          <Button disabled={!canSave || ctrl.loading} onClick={handleGuardar}>{ctrl.modoEdicion ? 'Guardar cambios' : 'Registrar usuario'}</Button>
         </div>
       </Modal>
     </div>
