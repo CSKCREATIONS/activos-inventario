@@ -60,6 +60,13 @@ export interface Equipo {
 
 // ─── ASIGNACIÓN ───────────────────────────────────────────────────────────────
 
+export interface AccesorioAsignado {
+  id: string;
+  nombre: string;
+  tipo_equipo?: TipoEquipo;
+  placa?: string;
+}
+
 export interface Asignacion {
   id: string;
   usuario_id: string;
@@ -68,7 +75,7 @@ export interface Asignacion {
   fecha_devolucion?: string;
   estado: EstadoAsignacion;
   observaciones?: string;
-  accesorios_entregados?: string[];
+  accesorios_entregados?: (string | AccesorioAsignado)[];
   acta_pdf?: string;
   hoja_vida_pdf?: string;
 }

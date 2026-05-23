@@ -5,9 +5,8 @@ import { useAsignacionesController } from '../../../controllers/useAsignacionesC
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
-import { Plus, RotateCcw, Link2, FileDown, Eye } from 'lucide-react';
+import { Plus, RotateCcw, Link2, FileDown, Eye, X } from 'lucide-react';
 
-const ACCESORIOS_OPCIONES = ['Cargador', 'Mouse', 'Teclado', 'Monitor'];
 const ASIGNACION_VARIANT = {
   Activa: 'green',
   Devuelta: 'blue',
@@ -20,7 +19,7 @@ export function AsignacionesPage() {
     if (!v) return '—';
     try {
       const d = new Date(v);
-      if (isNaN(d.getTime())) return v;
+      if (Number.isNaN(d.getTime())) return v;
       const day = String(d.getDate()).padStart(2, '0');
       const month = String(d.getMonth() + 1).padStart(2, '0');
       const year = d.getFullYear();
@@ -34,44 +33,34 @@ export function AsignacionesPage() {
     equipo_id: '',
     fecha_asignacion: new Date().toISOString().split('T')[0],
     observaciones: '',
-    accesorios_entregados: [] as string[],
+    accesorios_entregados: [] as { id: string; nombre: string; placa?: string; tipo_equipo?: string }[],
   });
   const [error, setError] = useState('');
-  const [otrosAccesorios, setOtrosAccesorios] = useState('');
 
-  const toggleAccesorio = (nombre: string) => {
+  const toggleAccesorio = (accesorio: { id: string; nombre: string; placa?: string; tipo_equipo?: string }) => {
     setForm((f) => {
-      const existe = f.accesorios_entregados.includes(nombre);
+      const existe = f.accesorios_entregados.some((a) => a.id === accesorio.id);
       return {
         ...f,
         accesorios_entregados: existe
-          ? f.accesorios_entregados.filter((x) => x !== nombre)
-          : [...f.accesorios_entregados, nombre],
+          ? f.accesorios_entregados.filter((a) => a.id !== accesorio.id)
+          : [...f.accesorios_entregados, accesorio],
       };
     });
   };
 
   const handleCrear = async () => {
     if (!form.usuario_id || !form.equipo_id) { setError('Usuario y equipo son requeridos.'); return; }
-    const extras = otrosAccesorios
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const accesorios_entregados = Array.from(new Set([
-      ...form.accesorios_entregados,
-      ...extras,
-    ]));
 
     const resultado = await ctrl.crearAsignacion({
       usuario_id: form.usuario_id,
       equipo_id: form.equipo_id,
       fecha_asignacion: form.fecha_asignacion,
       observaciones: form.observaciones,
-      accesorios_entregados,
+      accesorios_entregados: form.accesorios_entregados,
     });
     if (resultado.error) { setError(resultado.error); return; }
     setError('');
-    setOtrosAccesorios('');
   };
 
   return (
@@ -116,7 +105,7 @@ export function AsignacionesPage() {
                 observaciones: '',
                 accesorios_entregados: [],
               });
-              setOtrosAccesorios('');
+              setError('');
               ctrl.setModalAbierto(true);
             }}
             className="w-full sm:w-auto"
@@ -242,32 +231,69 @@ export function AsignacionesPage() {
             onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))}
           />
 
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-slate-700">Accesorios entregados</p>
-            <div className="grid grid-cols-2 gap-2">
-              {ACCESORIOS_OPCIONES.map((acc) => (
-                <label
-                  key={acc}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700"
-                >
-                  <input
-                    type="checkbox"
-                    checked={form.accesorios_entregados.includes(acc)}
-                    onChange={() => toggleAccesorio(acc)}
-                    className="h-4 w-4"
-                  />
-                  {acc}
-                </label>
-              ))}
-            </div>
-          </div>
+          <div className="space-y-4">
+            <p className="text-sm font-medium text-slate-700">Accesorios/Equipos adicionales</p>
+            
+            {Object.keys(ctrl.accesoriosDisponiblesAgrupados).length === 0 ? (
+              <p className="text-sm text-slate-500 italic">No hay accesorios disponibles para asignar</p>
+            ) : (
+              <div className="space-y-3 max-h-96 overflow-y-auto border border-slate-200 rounded-lg p-3">
+                {Object.entries(ctrl.accesoriosDisponiblesAgrupados).map(([tipo, accesorios]) => (
+                  <div key={tipo} className="space-y-2">
+                    <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{tipo}</h4>
+                    <div className="space-y-2 pl-2">
+                      {accesorios.map((acc) => (
+                        <label
+                          key={acc.id}
+                          className="flex items-start gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={form.accesorios_entregados.some((a) => a.id === acc.id)}
+                            onChange={() => toggleAccesorio({
+                              id: acc.id,
+                              nombre: acc.tipo_equipo || 'Accesorio',
+                              placa: acc.placa,
+                              tipo_equipo: acc.tipo_equipo,
+                            })}
+                            className="h-4 w-4 mt-0.5 flex-shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-slate-700">{acc.marca} {acc.modelo}</div>
+                            {acc.placa && <div className="text-xs text-slate-500">Placa: {acc.placa}</div>}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
-          <Field
-            label="Otros accesorios (separados por coma)"
-            value={otrosAccesorios}
-            onChange={(e) => setOtrosAccesorios(e.target.value)}
-            placeholder="Ej: Base refrigerante, Guaya"
-          />
+            {/* Resumen de seleccionados */}
+            {form.accesorios_entregados.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-600">Seleccionados:</p>
+                <div className="flex flex-wrap gap-2">
+                  {form.accesorios_entregados.map((acc) => (
+                    <div
+                      key={acc.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs"
+                    >
+                      <span>{acc.nombre} {acc.placa && `(${acc.placa})`}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleAccesorio(acc)}
+                        className="hover:text-blue-900"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
           <Button variant="outline" onClick={() => ctrl.setModalAbierto(false)}>Cancelar</Button>

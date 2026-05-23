@@ -22,7 +22,17 @@ def _normalize_accesorios(val) -> list[str]:
     if not val:
         return []
     if isinstance(val, list):
-        return [str(x).strip() for x in val if str(x).strip()]
+        result = []
+        for x in val:
+            if isinstance(x, dict):
+                # Si es un objeto, extraer el nombre o tipo_equipo
+                nombre = x.get("nombre") or x.get("tipo_equipo") or str(x)
+                result.append(nombre.strip())
+            else:
+                s = str(x).strip()
+                if s:
+                    result.append(s)
+        return result
     # fallback simple
     s = str(val).strip()
     if not s:

@@ -70,13 +70,29 @@ export function useAsignacionesController() {
     return equipos.filter((e) => e.estado === 'Disponible');
   }, [equipos]);
 
+  // Agrupar accesorios disponibles por tipo
+  const accesoriosDisponiblesAgrupados = useMemo(() => {
+    const accesorios = equipos.filter((e) => e.estado === 'Disponible');
+    const tipos = new Set<string>();
+    accesorios.forEach((a) => {
+      if (a.tipo_equipo && ['Monitor', 'Impresora', 'Escáner', 'Celular', 'Tablet', 'Router', 'Switch', 'UPS'].includes(a.tipo_equipo)) {
+        tipos.add(a.tipo_equipo);
+      }
+    });
+    const grouped: Record<string, typeof accesorios> = {};
+    Array.from(tipos).forEach((tipo) => {
+      grouped[tipo] = accesorios.filter((a) => a.tipo_equipo === tipo);
+    });
+    return grouped;
+  }, [equipos]);
+
   // ── CRUD con API ───────────────────────────────────────────────────────────
   const crearAsignacion = async (data: {
     usuario_id: string;
     equipo_id: string;
     observaciones?: string;
     fecha_asignacion: string;
-    accesorios_entregados?: string[];
+    accesorios_entregados?: (string | { id: string; nombre: string; placa?: string; tipo_equipo?: string })[];
   }) => {
     try {
       const res = await asignacionesApi.create(data);
@@ -108,6 +124,7 @@ export function useAsignacionesController() {
         }
       } catch (err: unknown) {
         // No bloquear la acción principal si la generación/previsualización falla
+        console.error('Error al generar/previsualizar acta:', err);
       }
       return { error: null, data: res.data };
     } catch (err: unknown) {
@@ -183,6 +200,7 @@ export function useAsignacionesController() {
     selectedAsignacion,
     setSelectedAsignacion,
     equiposDisponibles,
+    accesoriosDisponiblesAgrupados,
     usuarios,
     crearAsignacion,
     registrarDevolucion,

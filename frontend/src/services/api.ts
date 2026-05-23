@@ -105,7 +105,7 @@ export const asignacionesApi = {
     request<{ data: Asignacion[]; total: number; activas: number }>(buildUrl('/asignaciones', params)),
   getById: (id: string) => request<{ data: Asignacion }>(`/asignaciones/${id}`),
   getEquiposDisponibles: () => request<{ data: Equipo[] }>('/asignaciones/equipos-disponibles'),
-  create: (body: { usuario_id: string; equipo_id: string; fecha_asignacion: string; observaciones?: string; accesorios_entregados?: string[] }) =>
+  create: (body: { usuario_id: string; equipo_id: string; fecha_asignacion: string; observaciones?: string; accesorios_entregados?: (string | { id: string; nombre: string; placa?: string; tipo_equipo?: string })[] }) =>
     request<{ data: Asignacion }>('/asignaciones', { method: 'POST', body: JSON.stringify(body) }),
   update: (id: string, body: Partial<Asignacion>) =>
     request<{ data: Asignacion }>(`/asignaciones/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
