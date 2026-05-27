@@ -19,25 +19,58 @@ ACCESORIOS_OPCIONES = ["Cargador", "Mouse", "Teclado", "Monitor"]
 
 
 def _normalize_accesorios(val) -> list[str]:
+    """Normaliza accesorios a lista de strings para mostrar en el PDF.
+    
+    Puede recibir:
+    - None o vacío: devuelve []
+    - Lista de dicts: extrae nombre/tipo_equipo
+    - Lista de strings: devuelve como está
+    - String JSON: decodifica y procesa
+    """
+    print(f"[NORMALIZE ACCESORIOS] Entrada: {val} (tipo: {type(val)})")
+    
     if not val:
+        print(f"[NORMALIZE ACCESORIOS] Valor vacio/nulo")
         return []
+    
+    # Si es string JSON, intentar decodificar
+    if isinstance(val, str):
+        try:
+            import json
+            val = json.loads(val)
+            print(f"[NORMALIZE ACCESORIOS] Parseado JSON a: {val}")
+        except:
+            # Si no es JSON, tratarlo como string separado por comas
+            result = [p.strip() for p in val.split(",") if p.strip()]
+            print(f"[NORMALIZE ACCESORIOS] Tratado como string separado por comas: {result}")
+            return result
+    
     if isinstance(val, list):
         result = []
         for x in val:
+            print(f"[NORMALIZE ACCESORIOS]   Procesando item: {x} (tipo: {type(x)})")
             if isinstance(x, dict):
                 # Si es un objeto, extraer el nombre o tipo_equipo
                 nombre = x.get("nombre") or x.get("tipo_equipo") or str(x)
-                result.append(nombre.strip())
+                if nombre and nombre.strip():
+                    result.append(nombre.strip())
+                    print(f"[NORMALIZE ACCESORIOS]   -> Extraido: {nombre.strip()}")
             else:
                 s = str(x).strip()
                 if s:
                     result.append(s)
+                    print(f"[NORMALIZE ACCESORIOS]   -> String: {s}")
+        print(f"[NORMALIZE ACCESORIOS] Resultado final: {result}")
         return result
-    # fallback simple
+    
+    # Fallback
     s = str(val).strip()
     if not s:
+        print(f"[NORMALIZE ACCESORIOS] Fallback vacio")
         return []
-    return [p.strip() for p in s.split(",") if p.strip()]
+    result = [p.strip() for p in s.split(",") if p.strip()]
+    print(f"[NORMALIZE ACCESORIOS] Fallback resultado: {result}")
+    return result
 
 
 async def _generar_y_registrar_acta(
@@ -154,10 +187,15 @@ async def create(body: dict, current_user: dict = Depends(get_current_user)):
             detail=f"Faltan campos obligatorios: {', '.join(missing)}.",
         )
     try:
+        # Debug: log de datos recibidos
+        print(f"[ASIGNACIONES POST] Body recibido: {body}")
+        print(f"[ASIGNACIONES POST] Accesorios en body: {body.get('accesorios_entregados')}")
+        
         nueva = await AsignacionModel.create(body)
 
         cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
         accesorios = _normalize_accesorios(body.get("accesorios_entregados"))
+        print(f"[ASIGNACIONES POST] Accesorios normalizados: {accesorios}")
 
         # Intentar generar acta automáticamente (guardar plantilla rellenada con datos)
         try:
@@ -230,18 +268,6 @@ async def get_acta_pdf(id: str, force: bool = Query(False), current_user: dict =
     )
 
 
-@router.put("/{id}")
-async def update(id: str, body: dict):
-    existe = await AsignacionModel.find_by_id(id)
-    if not existe:
-        raise HTTPException(status_code=404, detail="Asignación no encontrada.")
-    try:
-        actualizada = await AsignacionModel.update(id, body)
-        return serialize({"data": actualizada, "message": "Asignación actualizada."})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.post("/{id}/devolucion")
 async def registrar_devolucion(id: str):
     try:
@@ -250,4 +276,41 @@ async def registrar_devolucion(id: str):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{id}")
+async def update(id: str, body: dict, current_user: dict = Depends(get_current_user)):
+    """Actualiza una asignación existente (usuarios_ids, accesorios, observaciones, etc.)"""
+    try:
+        print(f"[ASIGNACIONES PUT] Iniciando actualización de {id}")
+        print(f"[ASIGNACIONES PUT] Body recibido: {body}")
+        
+        asignacion = await AsignacionModel.find_by_id(id)
+        if not asignacion:
+            print(f"[ASIGNACIONES PUT] ERROR: Asignación no encontrada")
+            raise HTTPException(status_code=404, detail="Asignación no encontrada.")
+        
+        print(f"[ASIGNACIONES PUT] Asignación encontrada, procediendo a actualizar...")
+        
+        # Actualizar en BD (sin regenerar acta por ahora)
+        try:
+            actualizada = await AsignacionModel.update(id, body)
+            print(f"[ASIGNACIONES PUT] [OK] Asignación actualizada en BD")
+            print(f"[ASIGNACIONES PUT] Resultado actualizado: {actualizada}")
+        except Exception as e:
+            print(f"[ASIGNACIONES PUT] ERROR en update: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
+        
+        print(f"[ASIGNACIONES PUT] [OK] Retornando resultado")
+        return serialize({"data": actualizada, "message": "Asignación actualizada exitosamente."})
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ASIGNACIONES PUT] ERROR CRÍTICO: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

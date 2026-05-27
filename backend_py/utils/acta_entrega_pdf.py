@@ -468,6 +468,16 @@ def generar_acta_entrega_pdf(
     # ─────────────────────────
 
     acc_map = {
+        # Equipos/Accesorios disponibles en el PDF
+        "MONITOR": "monitor",
+        "TECLADO": "teclado",
+        "MOUSE": "mouse",
+        "PARLANTES": "parlantes",
+        "LECTOR": "lector_codigo_de_barras",
+        "LECTOR DE CÓDIGO DE BARRAS": "lector_codigo_de_barras",
+        "IMPRESORA": "impresora",
+        "ESCÁNER": "impresora",  # Mapear escáner a impresora si no hay campo específico
+        # Otros accesorios
         "REGULADOR": "regulador",
         "EXTENSIÓN": "extension",
         "UPS": "ups",
@@ -475,39 +485,103 @@ def generar_acta_entrega_pdf(
         "OTROS": "otros",
     }
 
-    for acc in accesorios_entregados:
+    # Debug: log de accesorios recibidos
+    print(f"[ACTA] ===== ACCESORIOS DEBUG =====")
+    print(f"[ACTA] Accesorios recibidos (RAW): {accesorios_entregados}")
+    print(f"[ACTA] Tipo: {type(accesorios_entregados)}")
+    print(f"[ACTA] Es None: {accesorios_entregados is None}")
+    print(f"[ACTA] Es lista vacia: {accesorios_entregados == []}")
+    if accesorios_entregados:
+        print(f"[ACTA] Cantidad de accesorios: {len(accesorios_entregados)}")
+    else:
+        print(f"[ACTA] VACIO O NULO")
 
-        key = acc_map.get(acc.upper())
+    # Normalizar nombres de accesorios
+    # Los accesorios pueden venir como:
+    # - strings: "Monitor"
+    # - dicts: {'id': 'e10', 'nombre': 'Monitor', ...}
+    accesorios_normalizados = []
+    accesorios_texto_observaciones = ""  # Para guardar texto que irá a observaciones
+    
+    for acc in accesorios_entregados:
+        # Si es dict, extraer el nombre
+        if isinstance(acc, dict):
+            acc_str = acc.get("nombre") or acc.get("tipo_equipo") or str(acc)
+            acc_str = str(acc_str).strip()
+        else:
+            # Si es string u otro, convertir directamente
+            acc_str = str(acc).strip() if acc else ""
+        
+        print(f"[ACTA]   Item procesado: '{acc_str}' (tipo orig: {type(acc).__name__})")
+        if acc_str:
+            accesorios_normalizados.append(acc_str)
+
+    print(f"[ACTA] Accesorios normalizados: {accesorios_normalizados}")
+    print(f"[ACTA] Total normalizados: {len(accesorios_normalizados)}")
+    print(f"[ACTA] ===== FIN DEBUG ======")
+
+    # Colocar cada accesorio en su campo específico (si existe)
+    # Los que no encuentren campo van a observaciones
+    
+    accesorios_no_colocados = []  # Para los que no encuentren campo
+    
+    for acc_str in accesorios_normalizados:
+        key = acc_map.get(acc_str.upper())
 
         if not key:
-            continue
+            # Si no coincide exactamente, intentar buscar con variaciones
+            for pattern, mapped_key in acc_map.items():
+                if pattern.lower() in acc_str.lower() or acc_str.lower() in pattern.lower():
+                    key = mapped_key
+                    break
 
-        _text(
-            oc,
-            "1",
-            POS[f"{key}_qty"][0],
-            POS[f"{key}_qty"][1],
-            35,
-            12,
-            size=8,
-            align="center"
-        )
+        if key and f"{key}_qty" in POS and f"{key}_ref" in POS:
+            # Escribir cantidad (1)
+            _text(
+                oc,
+                "1",
+                POS[f"{key}_qty"][0],
+                POS[f"{key}_qty"][1],
+                35,
+                12,
+                size=8,
+                align="center"
+            )
 
-        _text(
-            oc,
-            acc,
-            POS[f"{key}_ref"][0],
-            POS[f"{key}_ref"][1],
-            120,
-            12,
-            size=8
-        )
+            # Escribir referencia (nombre del accesorio)
+            _text(
+                oc,
+                acc_str,
+                POS[f"{key}_ref"][0],
+                POS[f"{key}_ref"][1],
+                120,
+                12,
+                size=8
+            )
+            print(f"[ACTA] [OK] Accesorio '{acc_str}' procesado en campo '{key}'")
+        else:
+            # No encontró campo -> agregar a observaciones
+            accesorios_no_colocados.append(acc_str)
+            print(f"[ACTA] Accesorio '{acc_str}' no tiene campo, se agregará a observaciones")
+    
+    # Si hay accesorios sin colocar, agregarlos a observaciones
+    if accesorios_no_colocados:
+        accesorios_texto_observaciones = "Accesorios: " + ", ".join(accesorios_no_colocados)
+        print(f"[ACTA] Accesorios sin colocar, agregando a observaciones: {accesorios_texto_observaciones}")
 
     # ─────────────────────────
     # OBSERVACIONES
     # ─────────────────────────
 
     obs = str(asignacion.get("observaciones") or "")
+    
+    # Si hay accesorios que no se colocaron en campos específicos, agregarlos a observaciones
+    if accesorios_texto_observaciones:
+        if obs:
+            obs = accesorios_texto_observaciones + "\n" + obs
+        else:
+            obs = accesorios_texto_observaciones
+        print(f"[ACTA] Observaciones finales con accesorios no colocados: {obs[:100]}...")
 
     if obs:
 

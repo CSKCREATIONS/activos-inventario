@@ -7,22 +7,56 @@ from config.db import get_pool
 def _map_asignacion(row: dict) -> dict:
     if not row:
         return row
+    
+    # Parsear accesorios_entregados
     val = row.get("accesorios_entregados")
+    
+    # Debug logging
+    print(f"[MAP ASIGNACION] Valor RAW de BD: {val} (tipo: {type(val)})")
+    
     if isinstance(val, (bytes, bytearray)):
         try:
             val = val.decode("utf-8")
-        except Exception:
+            print(f"[MAP ASIGNACION] Decodificado de bytes a: {val}")
+        except Exception as e:
+            print(f"[MAP ASIGNACION] Error decodificando bytes: {e}")
             val = None
     if isinstance(val, str) and val.strip():
         try:
             parsed = json.loads(val)
+            print(f"[MAP ASIGNACION] Parseado JSON a: {parsed}")
             if isinstance(parsed, list):
                 row["accesorios_entregados"] = parsed
-        except Exception:
+        except Exception as e:
+            print(f"[MAP ASIGNACION] Error parseando JSON: {e}")
             # si no es JSON válido, dejar el string tal cual
             pass
     elif val in (None, ""):
         row["accesorios_entregados"] = []
+        print(f"[MAP ASIGNACION] Valor vacio/nulo, asignando lista vacia")
+    
+    print(f"[MAP ASIGNACION] Resultado final: {row.get('accesorios_entregados')}")
+    
+    # Parsear usuarios_ids (múltiples usuarios)
+    usuarios_val = row.get("usuarios_ids")
+    if usuarios_val:
+        if isinstance(usuarios_val, (bytes, bytearray)):
+            try:
+                usuarios_val = usuarios_val.decode("utf-8")
+            except Exception:
+                usuarios_val = None
+        if isinstance(usuarios_val, str) and usuarios_val.strip():
+            try:
+                parsed_usuarios = json.loads(usuarios_val)
+                if isinstance(parsed_usuarios, list):
+                    row["usuarios_ids"] = parsed_usuarios
+            except Exception:
+                row["usuarios_ids"] = []
+        else:
+            row["usuarios_ids"] = []
+    else:
+        row["usuarios_ids"] = []
+    
     return row
 
 
@@ -100,6 +134,12 @@ class AsignacionModel:
                 accesorios_json = json.dumps(accesorios, ensure_ascii=False)
             else:
                 accesorios_json = str(accesorios)
+        
+        # Debug logging
+        print(f"[ASIGNACION CREATE] Accesorios recibidos: {accesorios}")
+        print(f"[ASIGNACION CREATE] Tipo accesorios: {type(accesorios)}")
+        print(f"[ASIGNACION CREATE] Accesorios JSON a guardar: {accesorios_json}")
+        
         pool = await get_pool()
         async with pool.acquire() as conn:
             conn.autocommit = False
@@ -121,9 +161,12 @@ class AsignacionModel:
                                 data.get("hoja_vida_pdf"),
                             ],
                         )
+                        print(f"[ASIGNACION CREATE] [OK] Insertado CON columna accesorios_entregados")
                     except Exception as e:
+                        print(f"[ASIGNACION CREATE] [ERROR] Error con columna: {str(e)[:100]}")
                         # Compatibilidad: si la columna aún no existe, insertar sin ella.
                         if "Unknown column" in str(e) and "accesorios_entregados" in str(e):
+                            print(f"[ASIGNACION CREATE] Intentando SIN columna (no existe en BD)")
                             await cur.execute(
                                 """INSERT INTO asignaciones
                                    (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones, acta_pdf, hoja_vida_pdf)
@@ -138,6 +181,7 @@ class AsignacionModel:
                                     data.get("hoja_vida_pdf"),
                                 ],
                             )
+                            print(f"[ASIGNACION CREATE] [OK] Insertado SIN columna accesorios_entregados")
                         else:
                             raise
                     await cur.execute(
@@ -186,6 +230,7 @@ class AsignacionModel:
         allowed = [
             "observaciones",
             "accesorios_entregados",
+            "usuarios_ids",
             "estado",
             "acta_pdf",
             "hoja_vida_pdf",
@@ -195,7 +240,7 @@ class AsignacionModel:
         for key in allowed:
             if key in data:
                 fields.append(f"{key} = %s")
-                if key == "accesorios_entregados" and isinstance(data[key], list):
+                if key in ("accesorios_entregados", "usuarios_ids") and isinstance(data[key], list):
                     values.append(json.dumps(data[key], ensure_ascii=False))
                 else:
                     values.append(data[key])
@@ -207,9 +252,46 @@ class AsignacionModel:
         pool = await get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    f"UPDATE asignaciones SET {', '.join(fields)} WHERE id = %s", values
-                )
+                try:
+                    await cur.execute(
+                        f"UPDATE asignaciones SET {', '.join(fields)} WHERE id = %s", values
+                    )
+                except Exception as e:
+                    err_str = str(e)
+                    # Si la columna no existe en la tabla (migración no aplicada), intentar reintentar
+                    # excluyendo las columnas opcionales que faltan.
+                    if "Unknown column" in err_str:
+                        missing_cols = []
+                        for col in ("usuarios_ids", "accesorios_entregados"):
+                            if col in err_str:
+                                missing_cols.append(col)
+
+                        # Si no detectamos columnas específicas, intentar quitar las opcionales presentes en `data`
+                        if not missing_cols:
+                            missing_cols = [c for c in ("usuarios_ids", "accesorios_entregados") if c in data]
+
+                        # Reconstruir campos/valores sin las columnas faltantes
+                        new_fields = []
+                        new_values = []
+                        for key in allowed:
+                            if key in data and key not in missing_cols:
+                                new_fields.append(f"{key} = %s")
+                                if key in ("accesorios_entregados", "usuarios_ids") and isinstance(data[key], list):
+                                    new_values.append(json.dumps(data[key], ensure_ascii=False))
+                                else:
+                                    new_values.append(data[key])
+
+                        if not new_fields:
+                            # Nada que actualizar después de quitar columnas faltantes
+                            return await AsignacionModel.find_by_id(id)
+
+                        new_values.append(id)
+                        await cur.execute(
+                            f"UPDATE asignaciones SET {', '.join(new_fields)} WHERE id = %s",
+                            new_values,
+                        )
+                    else:
+                        raise
         return await AsignacionModel.find_by_id(id)
 
     @staticmethod

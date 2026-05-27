@@ -95,6 +95,10 @@ export function useAsignacionesController() {
     accesorios_entregados?: (string | { id: string; nombre: string; placa?: string; tipo_equipo?: string })[];
   }) => {
     try {
+      // Debug: log de datos siendo enviados
+      console.log('[Asignaciones] Datos siendo enviados al backend:', data);
+      console.log('[Asignaciones] Accesorios entregados:', data.accesorios_entregados);
+      
       const res = await asignacionesApi.create(data);
       // Re-fetch para sincronizar estado del equipo
       const [asigRes, eqRes] = await Promise.all([
@@ -187,6 +191,32 @@ export function useAsignacionesController() {
     }
   };
 
+  const editarAsignacion = async (asignacionId: string, datosActualizados: Partial<any>) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const actualizada = await asignacionesApi.update(asignacionId, datosActualizados);
+      
+      // Actualizar en el store
+      updateAsignacion(asignacionId, actualizada.data);
+      
+      // Recargar todos los datos para sincronizar
+      await fetchData();
+      
+      setSelectedAsignacion(null);
+      setModalAbierto(false);
+      
+      return { success: true };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Error al actualizar asignación.';
+      setError(errorMsg);
+      return { error: errorMsg };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     asignaciones: asignacionesFiltradas,
     totalAsignaciones: asignaciones.length,
@@ -203,6 +233,7 @@ export function useAsignacionesController() {
     accesoriosDisponiblesAgrupados,
     usuarios,
     crearAsignacion,
+    editarAsignacion,
     registrarDevolucion,
     descargarActa,
     previsualizarActa,

@@ -70,6 +70,7 @@ export interface AccesorioAsignado {
 export interface Asignacion {
   id: string;
   usuario_id: string;
+  usuarios_ids?: string[];  // IDs adicionales de usuarios asignados
   equipo_id: string;
   fecha_asignacion: string;
   fecha_devolucion?: string;
