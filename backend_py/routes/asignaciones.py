@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from models.asignacion import AsignacionModel
 from models.documento import DocumentoModel
 from routes.auth import get_current_user
+from utils.accesorios import normalizar_accesorios_entregados
 from utils.acta_entrega_pdf import generar_acta_entrega_pdf
 from utils.files import safe_filename
 from utils.serializer import serialize
@@ -16,61 +17,6 @@ router = APIRouter()
 
 UPLOADS_DIR = os.getenv("UPLOADS_DIR", "uploads")
 ACCESORIOS_OPCIONES = ["Cargador", "Mouse", "Teclado", "Monitor"]
-
-
-def _normalize_accesorios(val) -> list[str]:
-    """Normaliza accesorios a lista de strings para mostrar en el PDF.
-    
-    Puede recibir:
-    - None o vacío: devuelve []
-    - Lista de dicts: extrae nombre/tipo_equipo
-    - Lista de strings: devuelve como está
-    - String JSON: decodifica y procesa
-    """
-    print(f"[NORMALIZE ACCESORIOS] Entrada: {val} (tipo: {type(val)})")
-    
-    if not val:
-        print(f"[NORMALIZE ACCESORIOS] Valor vacio/nulo")
-        return []
-    
-    # Si es string JSON, intentar decodificar
-    if isinstance(val, str):
-        try:
-            import json
-            val = json.loads(val)
-            print(f"[NORMALIZE ACCESORIOS] Parseado JSON a: {val}")
-        except:
-            # Si no es JSON, tratarlo como string separado por comas
-            result = [p.strip() for p in val.split(",") if p.strip()]
-            print(f"[NORMALIZE ACCESORIOS] Tratado como string separado por comas: {result}")
-            return result
-    
-    if isinstance(val, list):
-        result = []
-        for x in val:
-            print(f"[NORMALIZE ACCESORIOS]   Procesando item: {x} (tipo: {type(x)})")
-            if isinstance(x, dict):
-                # Si es un objeto, extraer el nombre o tipo_equipo
-                nombre = x.get("nombre") or x.get("tipo_equipo") or str(x)
-                if nombre and nombre.strip():
-                    result.append(nombre.strip())
-                    print(f"[NORMALIZE ACCESORIOS]   -> Extraido: {nombre.strip()}")
-            else:
-                s = str(x).strip()
-                if s:
-                    result.append(s)
-                    print(f"[NORMALIZE ACCESORIOS]   -> String: {s}")
-        print(f"[NORMALIZE ACCESORIOS] Resultado final: {result}")
-        return result
-    
-    # Fallback
-    s = str(val).strip()
-    if not s:
-        print(f"[NORMALIZE ACCESORIOS] Fallback vacio")
-        return []
-    result = [p.strip() for p in s.split(",") if p.strip()]
-    print(f"[NORMALIZE ACCESORIOS] Fallback resultado: {result}")
-    return result
 
 
 async def _generar_y_registrar_acta(
@@ -194,7 +140,7 @@ async def create(body: dict, current_user: dict = Depends(get_current_user)):
         nueva = await AsignacionModel.create(body)
 
         cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
-        accesorios = _normalize_accesorios(body.get("accesorios_entregados"))
+        accesorios = normalizar_accesorios_entregados(body.get("accesorios_entregados"))
         print(f"[ASIGNACIONES POST] Accesorios normalizados: {accesorios}")
 
         # Intentar generar acta automáticamente (guardar plantilla rellenada con datos)
@@ -228,26 +174,7 @@ async def get_acta_pdf(id: str, force: bool = Query(False), current_user: dict =
         raise HTTPException(status_code=404, detail="Asignación no encontrada.")
 
     cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
-    accesorios = _normalize_accesorios(asignacion.get("accesorios_entregados"))
-    # Si ya existe un acta guardada para esta asignación y no pedimos regeneración, servir ese archivo
-    acta_url = asignacion.get('acta_pdf')
-    if not force and acta_url and acta_url.startswith('/uploads/'):
-        filename = acta_url.split('/uploads/')[-1]
-        filepath = os.path.join(UPLOADS_DIR, filename)
-        if os.path.exists(filepath):
-            with open(filepath, 'rb') as f:
-                pdf_bytes = f.read()
-            return Response(
-                content=pdf_bytes,
-                media_type="application/pdf",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{filename}"',
-                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                    "Pragma": "no-cache",
-                    "X-Acta-From-Cache": "true",
-                    "X-Acta-Length": str(len(pdf_bytes)),
-                },
-            )
+    accesorios = normalizar_accesorios_entregados(asignacion.get("accesorios_entregados"))
 
     pdf_bytes, filename, _url = await _generar_y_registrar_acta(
         asignacion,
