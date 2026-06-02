@@ -30,6 +30,8 @@ try:
 except Exception:
     from PyPDF2 import PdfReader, PdfWriter
 
+from utils.accesorios import formatear_accesorio
+
 
 # ─────────────────────────────────────────────
 # COLORES
@@ -505,13 +507,7 @@ def generar_acta_entrega_pdf(
     accesorios_texto_observaciones = ""  # Para guardar texto que irá a observaciones
     
     for acc in accesorios_entregados:
-        # Si es dict, extraer el nombre
-        if isinstance(acc, dict):
-            acc_str = acc.get("nombre") or acc.get("tipo_equipo") or str(acc)
-            acc_str = str(acc_str).strip()
-        else:
-            # Si es string u otro, convertir directamente
-            acc_str = str(acc).strip() if acc else ""
+        acc_str = formatear_accesorio(acc)
         
         print(f"[ACTA]   Item procesado: '{acc_str}' (tipo orig: {type(acc).__name__})")
         if acc_str:

@@ -6,7 +6,7 @@ import { useAsignacionesStore } from '../models/stores/useAsignacionesStore';
 import { useEquiposStore } from '../models/stores/useEquiposStore';
 import { useUsuariosStore } from '../models/stores/useUsuariosStore';
 import { asignacionesApi, equiposApi, usuariosApi } from '../services/api';
-import type { Asignacion } from '../models/types/index';
+import type { Asignacion, AccesorioAsignado } from '../models/types/index';
 
 export function useAsignacionesController() {
   const { asignaciones, setAsignaciones, updateAsignacion } = useAsignacionesStore();
@@ -92,7 +92,7 @@ export function useAsignacionesController() {
     equipo_id: string;
     observaciones?: string;
     fecha_asignacion: string;
-    accesorios_entregados?: (string | { id: string; nombre: string; placa?: string; tipo_equipo?: string })[];
+    accesorios_entregados?: (string | AccesorioAsignado)[];
   }) => {
     try {
       // Debug: log de datos siendo enviados
@@ -163,7 +163,7 @@ export function useAsignacionesController() {
 
   const descargarActa = async (asignacionId: string) => {
     try {
-      const { blob, filename } = await asignacionesApi.downloadActa(asignacionId);
+      const { blob, filename } = await asignacionesApi.downloadActa(asignacionId, true);
       descargarBlob(blob, filename);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al descargar acta.');

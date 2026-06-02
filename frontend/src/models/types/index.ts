@@ -63,8 +63,12 @@ export interface Equipo {
 export interface AccesorioAsignado {
   id: string;
   nombre: string;
+  referencia?: string;
   tipo_equipo?: TipoEquipo;
+  marca?: string;
+  modelo?: string;
   placa?: string;
+  nombre_equipo?: string;
 }
 
 export interface Asignacion {

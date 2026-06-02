@@ -1,6 +1,7 @@
 // VIEW: Página Asignaciones
 import { useState } from 'react';
 import { useAsignacionesController } from '../../../controllers/useAsignacionesController';
+import type { Asignacion, AccesorioAsignado, Equipo } from '../../../models/types/index';
 
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
@@ -12,6 +13,76 @@ const ASIGNACION_VARIANT = {
   Devuelta: 'blue',
   Extraviada: 'red',
 } as const;
+
+type AccesorioTexto = {
+  referencia?: string;
+  nombre?: string;
+  nombre_equipo?: string;
+  tipo_equipo?: string;
+  marca?: string;
+  modelo?: string;
+};
+
+const formatearAccesorio = (valor: string | AccesorioTexto | null | undefined): string => {
+  if (!valor) return 'Accesorio';
+  if (typeof valor === 'string') return valor.trim() || 'Accesorio';
+
+  const referencia = valor.referencia?.trim();
+  if (referencia) return referencia;
+
+  const partes = [valor.tipo_equipo, valor.marca, valor.modelo]
+    .map((parte) => parte?.trim())
+    .filter((parte): parte is string => Boolean(parte));
+
+  if (partes.length > 0) {
+    return partes.join(' ');
+  }
+
+  const nombre = valor.nombre?.trim();
+  if (nombre) return nombre;
+
+  const nombreEquipo = valor.nombre_equipo?.trim();
+  if (nombreEquipo) return nombreEquipo;
+
+  return 'Accesorio';
+};
+
+const crearAccesorioAsignado = (equipo: Equipo): AccesorioAsignado => {
+  const referencia = formatearAccesorio(equipo);
+  return {
+    id: equipo.id,
+    nombre: referencia,
+    referencia,
+    tipo_equipo: equipo.tipo_equipo,
+    marca: equipo.marca,
+    modelo: equipo.modelo,
+    placa: equipo.placa,
+    nombre_equipo: equipo.nombre_equipo,
+  };
+};
+
+const normalizarAccesorioAsignado = (valor: string | AccesorioAsignado): AccesorioAsignado => {
+  if (typeof valor === 'string') {
+    const referencia = valor.trim() || 'Accesorio';
+    return {
+      id: referencia,
+      nombre: referencia,
+      referencia,
+    };
+  }
+
+  const referencia = valor.referencia?.trim() || formatearAccesorio(valor);
+  return {
+    id: valor.id || referencia,
+    nombre: referencia,
+    referencia,
+    tipo_equipo: valor.tipo_equipo,
+    marca: valor.marca,
+    modelo: valor.modelo,
+    placa: valor.placa,
+    nombre_equipo: valor.nombre_equipo,
+  };
+};
 
 export function AsignacionesPage() {
   const ctrl = useAsignacionesController();
@@ -33,7 +104,7 @@ export function AsignacionesPage() {
     equipo_id: '',
     fecha_asignacion: new Date().toISOString().split('T')[0],
     observaciones: '',
-    accesorios_entregados: [] as { id: string; nombre: string; placa?: string; tipo_equipo?: string }[],
+    accesorios_entregados: [] as AccesorioAsignado[],
   });
   const [error, setError] = useState('');
   
@@ -41,11 +112,11 @@ export function AsignacionesPage() {
   const [modalEditAbierto, setModalEditAbierto] = useState(false);
   const [editForm, setEditForm] = useState({
     usuarios_ids: [] as string[],
-    accesorios_entregados: [] as { id: string; nombre: string; placa?: string; tipo_equipo?: string }[],
+    accesorios_entregados: [] as AccesorioAsignado[],
     observaciones: '',
   });
 
-  const toggleAccesorio = (accesorio: { id: string; nombre: string; placa?: string; tipo_equipo?: string }) => {
+  const toggleAccesorio = (accesorio: AccesorioAsignado) => {
     setForm((f) => {
       const existe = f.accesorios_entregados.some((a) => a.id === accesorio.id);
       return {
@@ -71,16 +142,11 @@ export function AsignacionesPage() {
     setError('');
   };
 
-  const abrirModalEditar = (asignacion: any) => {
+  const abrirModalEditar = (asignacion: Asignacion) => {
     setEditForm({
       usuarios_ids: asignacion.usuarios_ids || [asignacion.usuario_id],
       accesorios_entregados: Array.isArray(asignacion.accesorios_entregados)
-        ? asignacion.accesorios_entregados.map((a: any) => ({
-            id: a.id || a,
-            nombre: typeof a === 'string' ? a : (a.nombre || a.tipo_equipo || a),
-            placa: a.placa,
-            tipo_equipo: a.tipo_equipo,
-          }))
+        ? asignacion.accesorios_entregados.map((a) => normalizarAccesorioAsignado(a as string | AccesorioAsignado))
         : [],
       observaciones: asignacion.observaciones || '',
     });
@@ -99,8 +165,7 @@ export function AsignacionesPage() {
       };
     });
   };
-
-  const toggleAccesorioEditar = (accesorio: { id: string; nombre: string; placa?: string; tipo_equipo?: string }) => {
+  const toggleAccesorioEditar = (accesorio: AccesorioAsignado) => {
     setEditForm((f) => {
       const existe = f.accesorios_entregados.some((a) => a.id === accesorio.id);
       return {
@@ -324,15 +389,13 @@ export function AsignacionesPage() {
                             type="checkbox"
                             checked={form.accesorios_entregados.some((a) => a.id === acc.id)}
                             onChange={() => toggleAccesorio({
-                              id: acc.id,
-                              nombre: acc.tipo_equipo || 'Accesorio',
+                              ...crearAccesorioAsignado(acc),
                               placa: acc.placa,
-                              tipo_equipo: acc.tipo_equipo,
                             })}
                             className="h-4 w-4 mt-0.5 flex-shrink-0"
                           />
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-slate-700">{acc.marca} {acc.modelo}</div>
+                            <div className="text-sm font-medium text-slate-700">{formatearAccesorio(acc)}</div>
                             {acc.placa && <div className="text-xs text-slate-500">Placa: {acc.placa}</div>}
                           </div>
                         </label>
@@ -353,7 +416,7 @@ export function AsignacionesPage() {
                       key={acc.id}
                       className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs"
                     >
-                      <span>{acc.nombre} {acc.placa && `(${acc.placa})`}</span>
+                      <span>{formatearAccesorio(acc)} {acc.placa && `(${acc.placa})`}</span>
                       <button
                         type="button"
                         onClick={() => toggleAccesorio(acc)}
@@ -420,15 +483,12 @@ export function AsignacionesPage() {
                             type="checkbox"
                             checked={editForm.accesorios_entregados.some((a) => a.id === acc.id)}
                             onChange={() => toggleAccesorioEditar({
-                              id: acc.id,
-                              nombre: acc.tipo_equipo || 'Accesorio',
-                              placa: acc.placa,
-                              tipo_equipo: acc.tipo_equipo,
+                              ...crearAccesorioAsignado(acc),
                             })}
                             className="h-4 w-4 mt-0.5 flex-shrink-0"
                           />
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-slate-700">{acc.marca} {acc.modelo}</div>
+                            <div className="text-sm font-medium text-slate-700">{formatearAccesorio(acc)}</div>
                             {acc.placa && <div className="text-xs text-slate-500">Placa: {acc.placa}</div>}
                           </div>
                         </label>
@@ -448,7 +508,7 @@ export function AsignacionesPage() {
                       key={acc.id}
                       className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs"
                     >
-                      <span>{acc.nombre} {acc.placa && `(${acc.placa})`}</span>
+                      <span>{formatearAccesorio(acc)} {acc.placa && `(${acc.placa})`}</span>
                       <button
                         type="button"
                         onClick={() => toggleAccesorioEditar(acc)}
