@@ -74,6 +74,14 @@ export function ActivosPage() {
           <option value="">Toda criticidad</option>
           {CRITICIDADES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+        <select
+          value={ctrl.filtros.tipo}
+          onChange={(e) => ctrl.setFiltros((f) => ({ ...f, tipo: e.target.value as TipoEquipo | '' }))}
+          className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Todos los tipos</option>
+          {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
         <div className="sm:ml-auto">
           <Button icon={<Plus size={16} />} onClick={handleAbrirCrear} className="w-full sm:w-auto">Nuevo activo</Button>
         </div>

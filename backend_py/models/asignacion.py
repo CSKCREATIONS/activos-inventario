@@ -8,34 +8,48 @@ def _map_asignacion(row: dict) -> dict:
     if not row:
         return row
     
-    # Parsear accesorios_entregados
-    val = row.get("accesorios_entregados")
-    
-    # Debug logging
-    print(f"[MAP ASIGNACION] Valor RAW de BD: {val} (tipo: {type(val)})")
-    
-    if isinstance(val, (bytes, bytearray)):
-        try:
-            val = val.decode("utf-8")
-            print(f"[MAP ASIGNACION] Decodificado de bytes a: {val}")
-        except Exception as e:
-            print(f"[MAP ASIGNACION] Error decodificando bytes: {e}")
-            val = None
-    if isinstance(val, str) and val.strip():
-        try:
-            parsed = json.loads(val)
-            print(f"[MAP ASIGNACION] Parseado JSON a: {parsed}")
-            if isinstance(parsed, list):
-                row["accesorios_entregados"] = parsed
-        except Exception as e:
-            print(f"[MAP ASIGNACION] Error parseando JSON: {e}")
-            # si no es JSON válido, dejar el string tal cual
-            pass
-    elif val in (None, ""):
-        row["accesorios_entregados"] = []
-        print(f"[MAP ASIGNACION] Valor vacio/nulo, asignando lista vacia")
-    
-    print(f"[MAP ASIGNACION] Resultado final: {row.get('accesorios_entregados')}")
+    # Parsear accesorios_entregados (solo si la columna está presente en el resultado)
+    if "accesorios_entregados" in row:
+        val = row.get("accesorios_entregados")
+
+        # Solo emitir logs cuando haya datos potencialmente útiles
+        if isinstance(val, (bytes, bytearray)):
+            try:
+                decoded = val.decode("utf-8")
+                try:
+                    parsed = json.loads(decoded)
+                    if isinstance(parsed, list):
+                        row["accesorios_entregados"] = parsed
+                        print(f"[MAP ASIGNACION] Parseado JSON (bytes) a: {parsed}")
+                except Exception:
+                    # si no es JSON válido, guardar el string resultante
+                    row["accesorios_entregados"] = decoded
+                    print(f"[MAP ASIGNACION] Decodificado de bytes a string: {decoded}")
+            except Exception:
+                # silenciar errores de decodificación en producción
+                row["accesorios_entregados"] = []
+
+        elif isinstance(val, str) and val.strip():
+            # Intentar parsear JSON si viene como string
+            try:
+                parsed = json.loads(val)
+                if isinstance(parsed, list):
+                    row["accesorios_entregados"] = parsed
+                    print(f"[MAP ASIGNACION] Parseado JSON a: {parsed}")
+                else:
+                    # si no es lista, guardarlo tal cual
+                    row["accesorios_entregados"] = parsed
+            except Exception:
+                # No es JSON; tratar como texto separado por comas u string simple
+                row["accesorios_entregados"] = val
+
+        else:
+            # Valor nulo o vacío -> normalizar a lista vacía sin log ruidoso
+            row["accesorios_entregados"] = []
+
+        # Imprimir resultado solo si hay contenido útil
+        if row.get("accesorios_entregados"):
+            print(f"[MAP ASIGNACION] Resultado final: {row.get('accesorios_entregados')}")
     
     # Parsear usuarios_ids (múltiples usuarios)
     usuarios_val = row.get("usuarios_ids")

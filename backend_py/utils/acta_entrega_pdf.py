@@ -477,6 +477,7 @@ def generar_acta_entrega_pdf(
         "LECTOR DE CÓDIGO DE BARRAS": "lector_codigo_de_barras",
         "IMPRESORA": "impresora",
         "ESCÁNER": "impresora",  # Mapear escáner a impresora si no hay campo específico
+        "CARGADOR": "otros",
         # Otros accesorios
         "REGULADOR": "regulador",
         "EXTENSIÓN": "extension",

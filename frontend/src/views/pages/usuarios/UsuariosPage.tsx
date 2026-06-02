@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useUsuariosController } from '../../../controllers/useUsuariosController';
 import {
-  Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, Badge
+  Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
 import { Plus, Pencil, Eye, Users, AlertCircle } from 'lucide-react';
 import type { Usuario } from '../../../models/types/index';
@@ -15,6 +15,16 @@ export function UsuariosPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const canSave = form.nombre && form.area && form.correo;
+
+  const SEDES = [
+    'Bogota',
+    'Yumbo',
+    'Sabaneta',
+    'La Estrella',
+    'Cartagena',
+    'Barranquilla',
+    'inHouse',
+  ];
 
   const handleGuardar = () => {
     const newErrors: Record<string, string> = {};
@@ -50,6 +60,14 @@ export function UsuariosPage() {
         >
           <option value="">Todas las áreas</option>
           {ctrl.areas.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select
+          value={ctrl.filtroSede}
+          onChange={(e) => ctrl.setFiltroSede(e.target.value)}
+          className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Todas las sedes</option>
+          {SEDES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <div className="sm:ml-auto">
           <Button icon={<Plus size={16} />} onClick={() => { setForm({ activo: true }); setErrors({}); ctrl.abrirCrear(); }} className="w-full sm:w-auto">
@@ -133,7 +151,12 @@ export function UsuariosPage() {
             <Field label="Área *" value={form.area ?? ''} onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))} />
             {errors.area && <p className="text-red-600 text-xs mt-1">{errors.area}</p>}
           </div>
-          <Field label="Sede" value={form.sede ?? ''} onChange={(e) => setForm((f) => ({ ...f, sede: e.target.value }))} />
+          <SelectField
+            label="Sede"
+            value={form.sede ?? ''}
+            onChange={(e) => setForm((f) => ({ ...f, sede: e.target.value }))}
+            options={[{ value: '', label: 'Seleccione una sede' }, ...SEDES.map((s) => ({ value: s, label: s }))]}
+          />
           <Field label="Proceso" value={form.proceso ?? ''} onChange={(e) => setForm((f) => ({ ...f, proceso: e.target.value }))} />
           <Field label="Grupo asignado" value={form.grupo_asignado ?? ''} onChange={(e) => setForm((f) => ({ ...f, grupo_asignado: e.target.value }))} />
           <div className={errors.correo ? "border border-red-500 rounded-lg p-2" : ""}>

@@ -12,7 +12,10 @@ async def main():
     asignacion_id = sys.argv[1]
     data = {
         'usuarios_ids': ['u4', 'u3'],
-        'accesorios_entregados': [{'id': 'e5', 'nombre': 'Impresora', 'placa': 'EAC000089', 'tipo_equipo': 'Impresora'}],
+        'accesorios_entregados': [
+            {'id': 'e10', 'nombre': 'Monitor', 'placa': 'EAC000620', 'tipo_equipo': 'Monitor'},
+            {'id': 'e5', 'nombre': 'Impresora', 'placa': 'EAC000089', 'tipo_equipo': 'Impresora'},
+        ],
         'observaciones': 'Prueba de actualización automática',
     }
     try:

@@ -48,24 +48,47 @@ class UsuarioModel:
         pool = await get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    """INSERT INTO usuarios
-                       (id, nombre, cargo, proceso, grupo_asignado, area, correo, ubicacion, sede, activo, fecha_registro)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                    [
-                        new_id,
-                        data["nombre"],
-                        data["cargo"],
-                        data["proceso"],
-                        data["grupo_asignado"],
-                        data["area"],
-                        data.get("correo"),
-                        data.get("ubicacion"),
-                        data.get("sede"),
-                        1 if data.get("activo", True) else 0,
-                        fecha_registro,
-                    ],
-                )
+                try:
+                    await cur.execute(
+                        """INSERT INTO usuarios
+                           (id, nombre, cargo, proceso, grupo_asignado, area, correo, ubicacion, sede, activo, fecha_registro)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        [
+                            new_id,
+                            data.get("nombre"),
+                            data.get("cargo"),
+                            data.get("proceso"),
+                            data.get("grupo_asignado"),
+                            data.get("area"),
+                            data.get("correo"),
+                            data.get("ubicacion"),
+                            data.get("sede"),
+                            1 if data.get("activo", True) else 0,
+                            fecha_registro,
+                        ],
+                    )
+                except Exception as e:
+                    # Compatibilidad: si la columna 'sede' no existe, insertar sin ella
+                    if "Unknown column" in str(e) and "sede" in str(e):
+                        await cur.execute(
+                            """INSERT INTO usuarios
+                               (id, nombre, cargo, proceso, grupo_asignado, area, correo, ubicacion, activo, fecha_registro)
+                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                            [
+                                new_id,
+                                data.get("nombre"),
+                                data.get("cargo"),
+                                data.get("proceso"),
+                                data.get("grupo_asignado"),
+                                data.get("area"),
+                                data.get("correo"),
+                                data.get("ubicacion"),
+                                1 if data.get("activo", True) else 0,
+                                fecha_registro,
+                            ],
+                        )
+                    else:
+                        raise
         return await UsuarioModel.find_by_id(new_id)
 
     @staticmethod
@@ -75,7 +98,10 @@ class UsuarioModel:
         for key in allowed:
             if key in data:
                 fields.append(f"{key} = %s")
-                values.append(1 if (key == "activo" and data[key]) else (0 if key == "activo" else data[key]))
+                if key == "activo":
+                    values.append(1 if data[key] else 0)
+                else:
+                    values.append(data[key])
 
         if not fields:
             return await UsuarioModel.find_by_id(id)
@@ -84,7 +110,36 @@ class UsuarioModel:
         pool = await get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(f"UPDATE usuarios SET {', '.join(fields)} WHERE id = %s", values)
+                try:
+                    await cur.execute(f"UPDATE usuarios SET {', '.join(fields)} WHERE id = %s", values)
+                except Exception as e:
+                    err_str = str(e)
+                    if "Unknown column" in err_str:
+                        # Si la columna sede falta, reintentar sin ella
+                        missing_cols = []
+                        if "sede" in err_str:
+                            missing_cols.append("sede")
+
+                        if not missing_cols:
+                            missing_cols = [c for c in ("sede",) if c in data]
+
+                        new_fields = []
+                        new_values = []
+                        for key in allowed:
+                            if key in data and key not in missing_cols:
+                                new_fields.append(f"{key} = %s")
+                                if key == "activo":
+                                    new_values.append(1 if data[key] else 0)
+                                else:
+                                    new_values.append(data[key])
+
+                        if not new_fields:
+                            return await UsuarioModel.find_by_id(id)
+
+                        new_values.append(id)
+                        await cur.execute(f"UPDATE usuarios SET {', '.join(new_fields)} WHERE id = %s", new_values)
+                    else:
+                        raise
         return await UsuarioModel.find_by_id(id)
 
     @staticmethod

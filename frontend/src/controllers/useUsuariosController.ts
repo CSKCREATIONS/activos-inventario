@@ -18,6 +18,7 @@ export function useUsuariosController() {
 
   const [busqueda, setBusqueda] = useState('');
   const [filtroArea, setFiltroArea] = useState('');
+  const [filtroSede, setFiltroSede] = useState('');
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modoEdicion, setModoEdicion] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -49,6 +50,7 @@ export function useUsuariosController() {
 
   // ── Filtrado local ─────────────────────────────────────────────────────────
   const areas = useMemo(() => [...new Set(usuarios.map((u) => u.area))].sort((a, b) => a.localeCompare(b)), [usuarios]);
+  const sedes = useMemo(() => [...new Set(usuarios.map((u) => u.sede || ''))].filter(Boolean).sort((a, b) => a.localeCompare(b)), [usuarios]);
 
   const usuariosFiltrados = useMemo(() => {
     return usuarios.filter((u) => {
@@ -60,9 +62,10 @@ export function useUsuariosController() {
         u.area.toLowerCase().includes(b) ||
         u.proceso.toLowerCase().includes(b);
       const matchArea = !filtroArea || u.area === filtroArea;
-      return match && matchArea;
+      const matchSede = !filtroSede || (u.sede || '') === filtroSede;
+      return match && matchArea && matchSede;
     });
-  }, [usuarios, busqueda, filtroArea]);
+  }, [usuarios, busqueda, filtroArea, filtroSede]);
 
   const getPerfilUsuario = (usuarioId: string) => {
     const asignacionesActivas = asignaciones.filter(
@@ -147,5 +150,8 @@ export function useUsuariosController() {
     loading,
     error,
     refetch: fetchData,
+    filtroSede,
+    setFiltroSede,
+    sedes,
   };
 }
