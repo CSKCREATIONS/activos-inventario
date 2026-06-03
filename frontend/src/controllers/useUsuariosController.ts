@@ -58,7 +58,7 @@ export function useUsuariosController() {
       const match =
         !b ||
         u.nombre.toLowerCase().includes(b) ||
-        u.correo.toLowerCase().includes(b) ||
+        (u.correo ?? '').toLowerCase().includes(b) ||
         u.area.toLowerCase().includes(b) ||
         u.proceso.toLowerCase().includes(b);
       const matchArea = !filtroArea || u.area === filtroArea;

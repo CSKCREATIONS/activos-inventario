@@ -12,7 +12,7 @@ import type { Equipo, TipoEquipo, EstadoEquipo, Criticidad, Confidencialidad } f
 import { ActivoDetalle } from './ActivoDetalle';
 import { equiposApi } from '../../../services/api';
 
-const TIPOS_CON_HV: TipoEquipo[] = ['Laptop', 'Desktop', 'All-in-one'];
+const TIPOS_CON_HV = new Set<TipoEquipo>(['Laptop', 'Desktop', 'All-in-one']);
 
 async function descargarHojaVida(equipo: Equipo) {
   const blob = await equiposApi.getHojaVidaPdf(equipo.id);
@@ -25,23 +25,30 @@ async function descargarHojaVida(equipo: Equipo) {
 }
 
 const TIPOS: TipoEquipo[] = ['Laptop','Desktop','All-in-one','Tablet','Impresora','Celular','Monitor','Servidor','Switch','Router','UPS','Otro'];
-const ESTADOS: EstadoEquipo[] = ['Disponible','Asignado','Dañado','Baja','En revisión','Rentado'];
+const ESTADOS: EstadoEquipo[] = ['Disponible','Asignado','Dañado','Baja','En revisión','Rentado','Disposicion'];
 const CRITICIDADES: Criticidad[] = ['Baja','Media','Alta','Crítica'];
 const CONF: Confidencialidad[] = ['Pública','Interna','Confidencial','Restringida'];
 
 export function ActivosPage() {
   const ctrl = useActivosController();
   const [vistaDetalle, setVistaDetalle] = useState<string | null>(null);
-  const [form, setForm] = useState<Partial<Equipo>>({ estado: 'Disponible', es_rentado: false });
+  const [form, setForm] = useState<Partial<Equipo> & { generar_hoja_vida?: boolean }>({
+    estado: 'Disponible',
+    es_rentado: false,
+    generar_hoja_vida: true,
+  });
 
-  const handleAbrirCrear = () => { setForm({ estado: 'Disponible', es_rentado: false }); ctrl.abrirCrear(); };
-  const handleAbrirEditar = (e: Equipo) => { setForm(e); ctrl.abrirEditar(e); };
+  const handleAbrirCrear = () => {
+    setForm({ estado: 'Disponible', es_rentado: false, generar_hoja_vida: true });
+    ctrl.abrirCrear();
+  };
+  const handleAbrirEditar = (e: Equipo) => { setForm({ ...e, generar_hoja_vida: true }); ctrl.abrirEditar(e); };
   const handleGuardar = () => {
     if (!form.placa || !form.tipo_equipo || !form.criticidad || !form.confidencialidad || !form.estado) return;
     if (ctrl.modoEdicion && ctrl.selectedEquipo) {
       ctrl.editarEquipo(ctrl.selectedEquipo.id, form);
     } else {
-      ctrl.crearEquipo(form as Omit<Equipo, 'id' | 'fecha_registro'>);
+      ctrl.crearEquipo(form as Omit<Equipo, 'id' | 'fecha_registro'> & { generar_hoja_vida?: boolean });
     }
   };
 
@@ -126,7 +133,7 @@ export function ActivosPage() {
                     <div className="flex items-center gap-1">
                       <Button variant="ghost" size="sm" icon={<Eye size={14} />} onClick={() => setVistaDetalle(e.id)}>Ver</Button>
                       <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => handleAbrirEditar(e)}>Editar</Button>
-                      {TIPOS_CON_HV.includes(e.tipo_equipo) && (
+                      {TIPOS_CON_HV.has(e.tipo_equipo) && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -171,6 +178,22 @@ export function ActivosPage() {
             <input type="checkbox" id="rentado" checked={form.es_rentado ?? false} onChange={(e) => setForm((f) => ({ ...f, es_rentado: e.target.checked }))} className="rounded" />
             <label htmlFor="rentado" className="text-sm font-medium text-slate-700">Equipo rentado</label>
           </div>
+
+          {TIPOS_CON_HV.has(form.tipo_equipo as TipoEquipo) && (
+            <div className="flex items-center gap-2 sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <input
+                type="checkbox"
+                id="generar-hv"
+                checked={form.generar_hoja_vida ?? true}
+                onChange={(e) => setForm((f) => ({ ...f, generar_hoja_vida: e.target.checked }))}
+                className="rounded"
+              />
+              <label htmlFor="generar-hv" className="text-sm font-medium text-slate-700">
+                Generar hoja de vida para este activo
+              </label>
+            </div>
+          )}
+
           <Field label="Observaciones" value={form.observaciones ?? ''} onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))} className="sm:col-span-2" />
 
           {/* ── Campos Hoja de Vida (solo Laptop / Desktop) ── */}

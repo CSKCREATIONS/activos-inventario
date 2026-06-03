@@ -26,7 +26,7 @@ export function UsuarioDetalle({ usuarioId, onVolver }: Props) {
             <h2 className="text-2xl font-bold text-slate-800">{usuario.nombre}</h2>
             <p className="text-slate-500">{usuario.cargo}</p>
             <div className="flex flex-wrap gap-3 mt-3 text-sm text-slate-600">
-              <span className="flex items-center gap-1"><Mail size={14} />{usuario.correo}</span>
+              {usuario.correo && <span className="flex items-center gap-1"><Mail size={14} />{usuario.correo}</span>}
               {usuario.ubicacion && <span className="flex items-center gap-1"><MapPin size={14} />{usuario.ubicacion}</span>}
               <Badge variant="indigo">{usuario.area}</Badge>
               {usuario.sede && <Badge variant="amber">{usuario.sede}</Badge>}

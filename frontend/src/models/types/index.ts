@@ -3,7 +3,7 @@
 export type TipoSuministro = 'Toner' | 'Licencia' | 'Cable' | 'Rollo';
 export type EstadoSuministro = 'Disponible' | 'Agotado' | 'Reservado' | 'Baja';
 
-export type EstadoEquipo = 'Disponible' | 'Asignado' | 'Dañado' | 'Baja' | 'En revisión' | 'Rentado';
+export type EstadoEquipo = 'Disponible' | 'Asignado' | 'Dañado' | 'Baja' | 'En revisión' | 'Rentado' | 'Disposicion';
 export type Criticidad = 'Baja' | 'Media' | 'Alta' | 'Crítica';
 export type Confidencialidad = 'Pública' | 'Interna' | 'Confidencial' | 'Restringida';
 export type TipoEquipo = 'Laptop' | 'Desktop' | 'All-in-one' | 'Tablet' | 'Impresora' | 'Celular' | 'Monitor' | 'Servidor' | 'Switch' | 'Router' | 'UPS' | 'Otro';
@@ -19,7 +19,7 @@ export interface Usuario {
   proceso: string;
   grupo_asignado: string;
   area: string;
-  correo: string;
+  correo?: string | null;
   ubicacion?: string;
   sede?: string;
   activo: boolean;

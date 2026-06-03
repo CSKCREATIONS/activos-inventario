@@ -14,7 +14,7 @@ export function UsuariosPage() {
   const [form, setForm] = useState<Partial<Usuario>>({ activo: true });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const canSave = form.nombre && form.area && form.correo;
+  const canSave = form.nombre && form.area;
 
   const SEDES = [
     'Bogota',
@@ -30,18 +30,20 @@ export function UsuariosPage() {
     const newErrors: Record<string, string> = {};
     if (!form.nombre) newErrors.nombre = "El nombre es requerido";
     if (!form.area) newErrors.area = "El área es requerida";
-    if (!form.correo) newErrors.correo = "El correo es requerido";
-
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
 
     setErrors({});
+    const payload = {
+      ...form,
+      correo: form.correo?.trim() || '',
+    };
     if (ctrl.modoEdicion && ctrl.selectedUsuario) {
-      ctrl.editarUsuario(ctrl.selectedUsuario.id, form);
+      ctrl.editarUsuario(ctrl.selectedUsuario.id, payload);
     } else {
-      ctrl.crearUsuario(form as Omit<Usuario, 'id' | 'fecha_registro'>);
+      ctrl.crearUsuario(payload as Omit<Usuario, 'id' | 'fecha_registro'>);
     }
   };
 
@@ -112,7 +114,7 @@ export function UsuariosPage() {
                   <Td><Badge variant="indigo">{u.area}</Badge></Td>
                   <Td>{u.sede || '-'}</Td>
                   <Td>{u.proceso}</Td>
-                  <Td className="text-blue-600">{u.correo}</Td>
+                  <Td className="text-blue-600">{u.correo || '-'}</Td>
                   <Td>
                     <Badge variant={u.activo ? 'green' : 'gray'}>{u.activo ? 'Activo' : 'Inactivo'}</Badge>
                   </Td>
@@ -159,10 +161,7 @@ export function UsuariosPage() {
           />
           <Field label="Proceso" value={form.proceso ?? ''} onChange={(e) => setForm((f) => ({ ...f, proceso: e.target.value }))} />
           <Field label="Grupo asignado" value={form.grupo_asignado ?? ''} onChange={(e) => setForm((f) => ({ ...f, grupo_asignado: e.target.value }))} />
-          <div className={errors.correo ? "border border-red-500 rounded-lg p-2" : ""}>
-            <Field label="Correo *" type="email" value={form.correo ?? ''} onChange={(e) => setForm((f) => ({ ...f, correo: e.target.value }))} />
-            {errors.correo && <p className="text-red-600 text-xs mt-1">{errors.correo}</p>}
-          </div>
+          <Field label="Correo" type="email" value={form.correo ?? ''} onChange={(e) => setForm((f) => ({ ...f, correo: e.target.value }))} />
           <Field label="Ubicación" value={form.ubicacion ?? ''} onChange={(e) => setForm((f) => ({ ...f, ubicacion: e.target.value }))} />
           <div className="flex items-center gap-2 sm:col-span-2">
             <input type="checkbox" id="uactivo" checked={form.activo ?? true} onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))} className="rounded" />

@@ -9,7 +9,7 @@ import type { EstadoEquipo, Criticidad, Confidencialidad } from '../../../models
 
 interface BadgeProps {
   children: ReactNode;
-  variant?: 'gray' | 'blue' | 'green' | 'red' | 'yellow' | 'orange' | 'purple' | 'indigo';
+  variant?: 'gray' | 'blue' | 'green' | 'red' | 'yellow' | 'orange' | 'purple' | 'indigo' | 'amber';
   size?: 'sm' | 'md';
 }
 
@@ -45,6 +45,7 @@ const estadoVariant: Record<EstadoEquipo, BadgeProps['variant']> = {
   Baja: 'gray',
   'En revisión': 'orange',
   Rentado: 'purple',
+  Disposicion: 'indigo',
 };
 
 export function EstadoBadge({ estado }: { estado: EstadoEquipo }) {

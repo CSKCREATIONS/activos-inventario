@@ -1,7 +1,7 @@
 // VIEW: Página Asignaciones
 import { useState } from 'react';
 import { useAsignacionesController } from '../../../controllers/useAsignacionesController';
-import type { Asignacion, AccesorioAsignado, Equipo } from '../../../models/types/index';
+import type { Asignacion, AccesorioAsignado, Equipo, TipoEquipo } from '../../../models/types/index';
 
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
@@ -13,6 +13,8 @@ const ASIGNACION_VARIANT = {
   Devuelta: 'blue',
   Extraviada: 'red',
 } as const;
+
+const TIPOS_CON_HV = new Set<TipoEquipo>(['Laptop', 'Desktop', 'All-in-one']);
 
 type AccesorioTexto = {
   referencia?: string;
@@ -105,8 +107,11 @@ export function AsignacionesPage() {
     fecha_asignacion: new Date().toISOString().split('T')[0],
     observaciones: '',
     accesorios_entregados: [] as AccesorioAsignado[],
+    generar_hoja_vida: false,
   });
   const [error, setError] = useState('');
+  const equipoSeleccionado = ctrl.equiposDisponibles.find((e) => e.id === form.equipo_id);
+  const puedeGenerarHojaVida = equipoSeleccionado ? TIPOS_CON_HV.has(equipoSeleccionado.tipo_equipo) : false;
   
   // Estados para edición
   const [modalEditAbierto, setModalEditAbierto] = useState(false);
@@ -137,6 +142,7 @@ export function AsignacionesPage() {
       fecha_asignacion: form.fecha_asignacion,
       observaciones: form.observaciones,
       accesorios_entregados: form.accesorios_entregados,
+      generar_hoja_vida: form.generar_hoja_vida,
     });
     if (resultado.error) { setError(resultado.error); return; }
     setError('');
@@ -232,6 +238,7 @@ export function AsignacionesPage() {
                 fecha_asignacion: new Date().toISOString().split('T')[0],
                 observaciones: '',
                 accesorios_entregados: [],
+                generar_hoja_vida: false,
               });
               setError('');
               ctrl.setModalAbierto(true);
@@ -354,9 +361,20 @@ export function AsignacionesPage() {
           <SelectField
             label="Equipo disponible *"
             value={form.equipo_id}
-            onChange={(e) => setForm((f) => ({ ...f, equipo_id: e.target.value }))}
+            onChange={(e) => setForm((f) => ({ ...f, equipo_id: e.target.value, generar_hoja_vida: false }))}
             options={ctrl.equiposDisponibles.map((e) => ({ value: e.id, label: `${e.placa} – ${e.tipo_equipo} ${e.marca ?? ''}` }))}
           />
+          {puedeGenerarHojaVida && (
+            <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 sm:col-span-2">
+              <input
+                type="checkbox"
+                checked={form.generar_hoja_vida}
+                onChange={(e) => setForm((f) => ({ ...f, generar_hoja_vida: e.target.checked }))}
+                className="rounded"
+              />
+              Generar hoja de vida para este equipo
+            </label>
+          )}
           <Field
             label="Fecha de asignación *"
             type="date"

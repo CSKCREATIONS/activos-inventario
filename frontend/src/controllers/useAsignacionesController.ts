@@ -93,6 +93,7 @@ export function useAsignacionesController() {
     observaciones?: string;
     fecha_asignacion: string;
     accesorios_entregados?: (string | AccesorioAsignado)[];
+    generar_hoja_vida?: boolean;
   }) => {
     try {
       // Debug: log de datos siendo enviados

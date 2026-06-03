@@ -7,7 +7,9 @@ from fastapi.responses import Response
 
 from models.asignacion import AsignacionModel
 from models.documento import DocumentoModel
+from models.equipo import EquipoModel
 from routes.auth import get_current_user
+from routes.equipos import _generar_y_registrar_hoja_vida, _requiere_hoja_vida
 from utils.accesorios import normalizar_accesorios_entregados
 from utils.acta_entrega_pdf import generar_acta_entrega_pdf
 from utils.files import safe_filename
@@ -148,6 +150,15 @@ async def create(body: dict, current_user: dict = Depends(get_current_user)):
             await _generar_y_registrar_acta(nueva, accesorios_entregados=accesorios, cargado_por=cargado_por, rellenar=True)
         except Exception:
             pass
+
+        # Generar hoja de vida solo si el usuario lo pidio explicitamente.
+        if body.get("generar_hoja_vida") is True:
+            try:
+                equipo = await EquipoModel.find_by_id(nueva.get("equipo_id"))
+                if equipo and _requiere_hoja_vida(equipo, True):
+                    await _generar_y_registrar_hoja_vida(equipo)
+            except Exception:
+                pass
 
         # Intentar enlazar Hoja de Vida (si existe) en la asignación
         try:

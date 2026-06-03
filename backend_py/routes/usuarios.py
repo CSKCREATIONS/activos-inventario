@@ -5,6 +5,13 @@ from utils.serializer import serialize
 router = APIRouter()
 
 
+def _normalizar_correo(correo):
+    if correo is None:
+        return ""
+    correo = str(correo).strip()
+    return correo
+
+
 @router.get("")
 async def get_all(busqueda: str = Query(""), area: str = Query("")):
     usuarios = await UsuarioModel.find_all(busqueda=busqueda, area=area)
@@ -36,7 +43,7 @@ async def get_perfil(id: str):
 
 @router.post("", status_code=201)
 async def create(body: dict):
-    required = ["nombre", "area", "correo"]
+    required = ["nombre", "area"]
     missing = [f for f in required if not body.get(f)]
     if missing:
         raise HTTPException(
@@ -44,6 +51,7 @@ async def create(body: dict):
             detail=f"Faltan campos obligatorios: {', '.join(missing)}.",
         )
     try:
+        body["correo"] = _normalizar_correo(body.get("correo"))
         nuevo = await UsuarioModel.create(body)
         return serialize({"data": nuevo, "message": "Usuario creado exitosamente."})
     except Exception as e:
@@ -58,6 +66,8 @@ async def update(id: str, body: dict):
     if not existe:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
     try:
+        if "correo" in body:
+            body["correo"] = _normalizar_correo(body.get("correo"))
         actualizado = await UsuarioModel.update(id, body)
         return serialize({"data": actualizado, "message": "Usuario actualizado."})
     except Exception as e:

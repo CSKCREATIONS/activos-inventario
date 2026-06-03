@@ -80,9 +80,9 @@ export const equiposApi = {
     request<{ data: Equipo[]; total: number }>(buildUrl('/equipos', params)),
   getById: (id: string) => request<{ data: Equipo }>(`/equipos/${id}`),
   getHistorial: (id: string) => request<{ data: unknown }>(`/equipos/${id}/historial`),
-  create: (body: Omit<Equipo, 'id' | 'fecha_registro'>) =>
+  create: (body: (Omit<Equipo, 'id' | 'fecha_registro'> & { generar_hoja_vida?: boolean })) =>
     request<{ data: Equipo }>('/equipos', { method: 'POST', body: JSON.stringify(body) }),
-  update: (id: string, body: Partial<Equipo>) =>
+  update: (id: string, body: (Partial<Equipo> & { generar_hoja_vida?: boolean })) =>
     request<{ data: Equipo }>(`/equipos/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   remove: (id: string) =>
     request<{ message: string }>(`/equipos/${id}`, { method: 'DELETE' }),
@@ -106,7 +106,7 @@ export const asignacionesApi = {
     request<{ data: Asignacion[]; total: number; activas: number }>(buildUrl('/asignaciones', params)),
   getById: (id: string) => request<{ data: Asignacion }>(`/asignaciones/${id}`),
   getEquiposDisponibles: () => request<{ data: Equipo[] }>('/asignaciones/equipos-disponibles'),
-  create: (body: { usuario_id: string; equipo_id: string; fecha_asignacion: string; observaciones?: string; accesorios_entregados?: (string | AccesorioAsignado)[] }) =>
+  create: (body: { usuario_id: string; equipo_id: string; fecha_asignacion: string; observaciones?: string; accesorios_entregados?: (string | AccesorioAsignado)[]; generar_hoja_vida?: boolean }) =>
     request<{ data: Asignacion }>('/asignaciones', { method: 'POST', body: JSON.stringify(body) }),
   update: (id: string, body: Partial<Asignacion>) =>
     request<{ data: Asignacion }>(`/asignaciones/${id}`, { method: 'PUT', body: JSON.stringify(body) }),

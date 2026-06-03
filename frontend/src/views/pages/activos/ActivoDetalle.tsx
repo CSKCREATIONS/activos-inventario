@@ -93,7 +93,7 @@ export function ActivoDetalle({ equipoId, onVolver }: Props) {
               <dl className="space-y-1.5 text-sm">
                 <div><dt className="text-xs text-slate-400">Área</dt><dd className="font-medium">{responsable.area}</dd></div>
                 <div><dt className="text-xs text-slate-400">Proceso</dt><dd className="font-medium">{responsable.proceso}</dd></div>
-                <div><dt className="text-xs text-slate-400">Correo</dt><dd className="font-medium text-blue-600">{responsable.correo}</dd></div>
+                <div><dt className="text-xs text-slate-400">Correo</dt><dd className="font-medium text-blue-600">{responsable.correo || '-'}</dd></div>
               </dl>
             </div>
           ) : (
