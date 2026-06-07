@@ -18,10 +18,17 @@ router = APIRouter()
 security = HTTPBearer()
 pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt_sha256", "bcrypt"], deprecated="auto")
 
-JWT_SECRET = os.getenv("JWT_SECRET", "changeme_in_production_please_use_env")
+# ─── FORZAR JWT_SECRET desde entorno (sin valor por defecto inseguro) ───
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError(
+        "JWT_SECRET no está definido en el entorno. "
+        "El sistema no puede arrancar de forma segura. "
+        "Asigna un valor (ej: openssl rand -hex 32) y reinicia."
+    )
+
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
-
 
 # ─── Helpers ──────────────────────────────────────────────
 
@@ -54,33 +61,51 @@ async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(securit
 async def login(body: dict):
     """
     Recibe { username, password } y retorna un JWT Bearer token.
+    Mensajes de error unificados para evitar enumeración de usuarios.
     """
     username = (body.get("username") or "").strip()
     password = body.get("password") or ""
 
     if not username or not password:
-        raise HTTPException(status_code=400, detail="username y password son requeridos.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="username y password son requeridos."
+        )
 
     user = await get_by_username(username)
 
+    # Si el usuario no existe, respondemos igual que si la contraseña fuera incorrecta
     if not user:
-        raise HTTPException(status_code=401, detail="Credenciales incorrectas.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas."
+        )
 
+    # Verificar estado activo (pero sin diferenciar en el mensaje)
+    # Si está inactivo, también respondemos "credenciales incorrectas"
     if not user.get("activo"):
-        raise HTTPException(status_code=403, detail="Usuario inactivo. Contacta al administrador.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas."
+        )
 
     try:
         verified = pwd_context.verify(password, user["password_hash"])
     except ValueError as e:
         msg = str(e)
+        # Manejo del límite de 72 bytes en bcrypt
         if "72" in msg or "truncate" in msg or "longer than" in msg:
             verified = pwd_context.verify(password[:72], user["password_hash"])
         else:
             raise
 
     if not verified:
-        raise HTTPException(status_code=401, detail="Credenciales incorrectas.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas."
+        )
 
+    # Actualizar último acceso
     await update_ultimo_acceso(user["id"])
 
     token = _create_token({
@@ -109,23 +134,41 @@ async def me(current_user: dict = Depends(get_current_user)):
     return {"user": current_user}
 
 
-@router.post("/setup", status_code=201)
+@router.post("/setup", status_code=status.HTTP_201_CREATED)
 async def setup_admin(body: dict):
     """
     Crea el primer usuario admin si la tabla está vacía.
     Solo funciona cuando NO existe ningún usuario del sistema.
+    Ahora exige una contraseña segura (mínimo 8 caracteres) en lugar de usar
+    una por defecto. Esto evita credenciales conocidas en instalaciones nuevas.
     """
     total = await count_usuarios_sistema()
     if total > 0:
         raise HTTPException(
-            status_code=409,
-            detail="Ya existen usuarios en el sistema. Usa la sección de Administración para crear más.",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ya existen usuarios en el sistema. Usa la sección de Administración para crear más."
         )
 
-    username = (body.get("username") or "admin").strip()
-    password = body.get("password") or "admin123"
+    username = (body.get("username") or "").strip()
+    password = body.get("password", "").strip()
     nombre = body.get("nombre") or "Administrador"
     email = body.get("email") or "admin@empresa.com"
+
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El nombre de usuario es requerido."
+        )
+    if not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debes proporcionar una contraseña para el usuario administrador."
+        )
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña debe tener al menos 8 caracteres."
+        )
 
     try:
         hashed = pwd_context.hash(password)
@@ -135,6 +178,7 @@ async def setup_admin(body: dict):
             hashed = pwd_context.hash(password[:72])
         else:
             raise
+
     await create_usuario_sistema({
         "id": str(uuid.uuid4()),
         "username": username,

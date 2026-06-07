@@ -15,10 +15,28 @@ from utils.acta_entrega_pdf import generar_acta_entrega_pdf
 from utils.files import safe_filename
 from utils.serializer import serialize
 
+from config.db import get_pool
+
+
 router = APIRouter()
 
 UPLOADS_DIR = os.getenv("UPLOADS_DIR", "uploads")
 ACCESORIOS_OPCIONES = ["Cargador", "Mouse", "Teclado", "Monitor"]
+
+
+# ─── Helper: cambiar estado de equipos adicionales (accesorios) ─────────────
+async def _cambiar_estado_accesorios(accesorios_ids: list[str], nuevo_estado: str):
+    """Cambia el estado de una lista de equipos (accesorios) al valor dado."""
+    if not accesorios_ids:
+        return
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            for eq_id in accesorios_ids:
+                await cur.execute(
+                    "UPDATE equipos SET estado = %s WHERE id = %s",
+                    (nuevo_estado, eq_id)
+                )
 
 
 async def _generar_y_registrar_acta(
@@ -26,18 +44,42 @@ async def _generar_y_registrar_acta(
     *,
     accesorios_entregados: list[str],
     cargado_por: str,
-    rellenar: bool = True,
+    regenerar: bool = False,
 ) -> tuple[bytes, str, str]:
-    # Si no queremos rellenar la plantilla, devolvemos los bytes crudos de la plantilla (si existe)
-    tpl_paths = [
-        Path('Doc') / 'Julian Castro Sena Acta.pdf',
-    ]
+    """
+    Genera o recupera el Acta de Entrega en PDF.
+    Si regenerar es False y ya existe un acta en la BD, devuelve la existente.
+    Si regenerar es True, fuerza la regeneración y actualiza versión.
+    """
+    # Verificar si ya existe un acta asociada
+    existing_docs = await DocumentoModel.find_all(tipo="Acta", asignacion_id=asignacion["id"])
+    if not regenerar and existing_docs:
+        # Usar el primer documento existente
+        doc = existing_docs[0]
+        # Recuperar el contenido desde el BLOB o desde disco
+        archivo = await DocumentoModel.get_archivo(doc["id"])
+        if archivo and archivo.get("contenido"):
+            pdf_bytes = archivo["contenido"]
+            filename = safe_filename(archivo.get("filename") or "acta.pdf", default="acta.pdf")
+            file_url = doc.get("url") or f"/uploads/{filename}"
+            return pdf_bytes, filename, file_url
+        # Fallback: si no hay BLOB, intentar desde disco
+        if doc.get("url") and doc["url"].startswith("/uploads/"):
+            file_path = os.path.join(UPLOADS_DIR, Path(doc["url"]).name)
+            if os.path.exists(file_path):
+                with open(file_path, "rb") as f:
+                    pdf_bytes = f.read()
+                filename = Path(file_path).name
+                file_url = doc["url"]
+                return pdf_bytes, filename, file_url
+
+    # Si llegamos aquí, hay que regenerar el PDF
+    tpl_paths = [Path('Doc') / 'Julian Castro Sena Acta.pdf']
     pdf_bytes = None
-    if not rellenar:
-        for p in tpl_paths:
-            if p.exists():
-                pdf_bytes = p.read_bytes()
-                break
+    for p in tpl_paths:
+        if p.exists():
+            pdf_bytes = p.read_bytes()
+            break
     if pdf_bytes is None:
         pdf_bytes = generar_acta_entrega_pdf(
             dict(asignacion),
@@ -46,7 +88,7 @@ async def _generar_y_registrar_acta(
             entregado_por=cargado_por,
         )
 
-    # Guardar en disco (fallback)
+    # Guardar en disco
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     placa = asignacion.get("placa") or "equipo"
     filename = safe_filename(
@@ -56,50 +98,37 @@ async def _generar_y_registrar_acta(
     filepath = os.path.join(UPLOADS_DIR, filename)
     with open(filepath, "wb") as f:
         f.write(pdf_bytes)
-
     file_url = f"/uploads/{filename}"
 
-    # Registrar/actualizar en documentos
-    existing = await DocumentoModel.find_all(tipo="Acta", asignacion_id=asignacion["id"])
-    if not existing:
+    # Registrar o actualizar documento
+    if not existing_docs:
         doc = await DocumentoModel.create({
-            "nombre":      f"Acta entrega {placa}",
-            "tipo":        "Acta",
-            "equipo_id":   asignacion.get("equipo_id"),
+            "nombre": f"Acta entrega {placa}",
+            "tipo": "Acta",
+            "equipo_id": asignacion.get("equipo_id"),
             "asignacion_id": asignacion.get("id"),
-            "usuario_id":  asignacion.get("usuario_id"),
-            "url":         file_url,
+            "usuario_id": asignacion.get("usuario_id"),
+            "url": file_url,
             "fecha_carga": date.today().isoformat(),
             "cargado_por": cargado_por,
-            "version":     1,
+            "version": 1,
         })
         if doc:
-            await DocumentoModel.upsert_archivo(
-                doc["id"],
-                filename=filename,
-                mime_type="application/pdf",
-                contenido=pdf_bytes,
-            )
+            await DocumentoModel.upsert_archivo(doc["id"], filename=filename, mime_type="application/pdf", contenido=pdf_bytes)
     else:
-        doc = await DocumentoModel.update(existing[0]["id"], {
-            "url":        file_url,
+        # Actualizar versión solo si regeneramos
+        nueva_version = (existing_docs[0].get("version") or 1) + 1
+        doc = await DocumentoModel.update(existing_docs[0]["id"], {
+            "url": file_url,
             "fecha_carga": date.today().isoformat(),
             "cargado_por": cargado_por,
-            "version":    (existing[0].get("version") or 1) + 1,
+            "version": nueva_version,
         })
         if doc:
-            await DocumentoModel.upsert_archivo(
-                doc["id"],
-                filename=filename,
-                mime_type="application/pdf",
-                contenido=pdf_bytes,
-            )
+            await DocumentoModel.upsert_archivo(doc["id"], filename=filename, mime_type="application/pdf", contenido=pdf_bytes)
 
-    # Persistir URL en asignaciones (si aplica)
-    try:
-        await AsignacionModel.update(asignacion["id"], {"acta_pdf": file_url})
-    except Exception:
-        pass
+    # Actualizar URL en asignaciones
+    await AsignacionModel.update(asignacion["id"], {"acta_pdf": file_url})
 
     return pdf_bytes, filename, file_url
 
@@ -134,43 +163,61 @@ async def create(body: dict, current_user: dict = Depends(get_current_user)):
             status_code=400,
             detail=f"Faltan campos obligatorios: {', '.join(missing)}.",
         )
+
+    nueva = None
     try:
-        # Debug: log de datos recibidos
-        print(f"[ASIGNACIONES POST] Body recibido: {body}")
-        print(f"[ASIGNACIONES POST] Accesorios en body: {body.get('accesorios_entregados')}")
-        
+        # Crear asignación (ya maneja transacción y bloqueo)
         nueva = await AsignacionModel.create(body)
 
+        # Obtener IDs de los accesorios adicionales (equipos) para cambiar su estado
+        accesorios_raw = body.get("accesorios_entregados", [])
+        accesorios_ids = []
+        for acc in accesorios_raw:
+            if isinstance(acc, dict) and acc.get("id"):
+                accesorios_ids.append(acc["id"])
+            elif isinstance(acc, str):
+                # Si es solo texto, no podemos cambiar estado; se ignora
+                pass
+        if accesorios_ids:
+            await _cambiar_estado_accesorios(accesorios_ids, "Asignado")
+
         cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
-        accesorios = normalizar_accesorios_entregados(body.get("accesorios_entregados"))
-        print(f"[ASIGNACIONES POST] Accesorios normalizados: {accesorios}")
+        accesorios_textos = normalizar_accesorios_entregados(body.get("accesorios_entregados"))
 
-        # Intentar generar acta automáticamente (guardar plantilla rellenada con datos)
+        # Generar acta (si falla, se registra pero no se detiene la creación)
+        acta_error = None
         try:
-            await _generar_y_registrar_acta(nueva, accesorios_entregados=accesorios, cargado_por=cargado_por, rellenar=True)
-        except Exception:
-            pass
+            await _generar_y_registrar_acta(nueva, accesorios_entregados=accesorios_textos, cargado_por=cargado_por, regenerar=False)
+        except Exception as e:
+            acta_error = str(e)
+            # Registrar en log (aquí solo print, idealmente logging)
+            print(f"[ERROR] Falló generación de acta para asignación {nueva['id']}: {acta_error}")
 
-        # Generar hoja de vida solo si el usuario lo pidio explicitamente.
+        # Generar hoja de vida si solicitado
         if body.get("generar_hoja_vida") is True:
             try:
                 equipo = await EquipoModel.find_by_id(nueva.get("equipo_id"))
                 if equipo and _requiere_hoja_vida(equipo, True):
                     await _generar_y_registrar_hoja_vida(equipo)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[ERROR] Falló generación de hoja de vida para equipo {nueva.get('equipo_id')}: {e}")
 
-        # Intentar enlazar Hoja de Vida (si existe) en la asignación
+        # Enlazar hoja de vida existente si la hay
         try:
             hv = await DocumentoModel.find_all(tipo="Hoja de vida", equipo_id=nueva.get("equipo_id"))
             if hv:
                 await AsignacionModel.update(nueva["id"], {"hoja_vida_pdf": hv[0].get("url")})
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[ERROR] Falló enlace de hoja de vida: {e}")
 
-        # Releer para devolver con URLs actualizadas
+        # Releer asignación actualizada
         nueva = await AsignacionModel.find_by_id(nueva["id"])
-        return serialize({"data": nueva, "message": "Asignación creada exitosamente."})
+
+        response_data = {"data": nueva, "message": "Asignación creada exitosamente."}
+        if acta_error:
+            response_data["warning"] = f"Acta generada con error: {acta_error}"
+        return serialize(response_data)
+
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
@@ -178,8 +225,12 @@ async def create(body: dict, current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/{id}/acta-pdf")
-async def get_acta_pdf(id: str, force: bool = Query(False), current_user: dict = Depends(get_current_user)):
-    """Genera (o regenera) el Acta de Entrega en PDF, la almacena y la devuelve como descarga."""
+async def get_acta_pdf(
+    id: str,
+    force: bool = Query(False),
+    current_user: dict = Depends(get_current_user),
+):
+    """Devuelve el Acta de Entrega en PDF. Si force=false, devuelve la existente; si force=true, regenera."""
     asignacion = await AsignacionModel.find_by_id(id)
     if not asignacion:
         raise HTTPException(status_code=404, detail="Asignación no encontrada.")
@@ -187,11 +238,15 @@ async def get_acta_pdf(id: str, force: bool = Query(False), current_user: dict =
     cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
     accesorios = normalizar_accesorios_entregados(asignacion.get("accesorios_entregados"))
 
-    pdf_bytes, filename, _url = await _generar_y_registrar_acta(
-        asignacion,
-        accesorios_entregados=accesorios,
-        cargado_por=cargado_por,
-    )
+    try:
+        pdf_bytes, filename, _ = await _generar_y_registrar_acta(
+            asignacion,
+            accesorios_entregados=accesorios,
+            cargado_por=cargado_por,
+            regenerar=force,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al generar el acta: {str(e)}")
 
     return Response(
         content=pdf_bytes,
@@ -200,7 +255,7 @@ async def get_acta_pdf(id: str, force: bool = Query(False), current_user: dict =
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
-            "X-Acta-Generated": "true",
+            "X-Acta-Generated": "true" if force else "false",
             "X-Acta-Length": str(len(pdf_bytes)),
         },
     )
@@ -209,8 +264,24 @@ async def get_acta_pdf(id: str, force: bool = Query(False), current_user: dict =
 @router.post("/{id}/devolucion")
 async def registrar_devolucion(id: str):
     try:
+        # Primero obtener la asignación para saber qué accesorios tiene
+        asignacion = await AsignacionModel.find_by_id(id)
+        if not asignacion:
+            raise HTTPException(status_code=404, detail="Asignación no encontrada.")
+
+        # Extraer IDs de accesorios asignados (que son equipos cuyo estado cambiamos antes)
+        accesorios_ids = []
+        accesorios_raw = asignacion.get("accesorios_entregados", [])
+        for acc in accesorios_raw:
+            if isinstance(acc, dict) and acc.get("id"):
+                accesorios_ids.append(acc["id"])
+        if accesorios_ids:
+            await _cambiar_estado_accesorios(accesorios_ids, "Disponible")
+
+        # Registrar devolución (actualiza estado de asignación y equipo principal)
         actualizada = await AsignacionModel.registrar_devolucion(id)
-        return serialize({"data": actualizada, "message": "Devolución registrada. Equipo marcado como Disponible."})
+
+        return serialize({"data": actualizada, "message": "Devolución registrada. Equipo y accesorios marcados como Disponibles."})
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -221,34 +292,14 @@ async def registrar_devolucion(id: str):
 async def update(id: str, body: dict, current_user: dict = Depends(get_current_user)):
     """Actualiza una asignación existente (usuarios_ids, accesorios, observaciones, etc.)"""
     try:
-        print(f"[ASIGNACIONES PUT] Iniciando actualización de {id}")
-        print(f"[ASIGNACIONES PUT] Body recibido: {body}")
-        
         asignacion = await AsignacionModel.find_by_id(id)
         if not asignacion:
-            print(f"[ASIGNACIONES PUT] ERROR: Asignación no encontrada")
             raise HTTPException(status_code=404, detail="Asignación no encontrada.")
-        
-        print(f"[ASIGNACIONES PUT] Asignación encontrada, procediendo a actualizar...")
-        
-        # Actualizar en BD (sin regenerar acta por ahora)
-        try:
-            actualizada = await AsignacionModel.update(id, body)
-            print(f"[ASIGNACIONES PUT] [OK] Asignación actualizada en BD")
-            print(f"[ASIGNACIONES PUT] Resultado actualizado: {actualizada}")
-        except Exception as e:
-            print(f"[ASIGNACIONES PUT] ERROR en update: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise
-        
-        print(f"[ASIGNACIONES PUT] [OK] Retornando resultado")
+
+        # Actualizar en BD (sin regenerar acta automáticamente)
+        actualizada = await AsignacionModel.update(id, body)
         return serialize({"data": actualizada, "message": "Asignación actualizada exitosamente."})
-    
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[ASIGNACIONES PUT] ERROR CRÍTICO: {str(e)}")
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

@@ -81,10 +81,7 @@ def _parse_csv(content: bytes) -> list[dict]:
 
 
 def _parse_xlsx(content: bytes) -> list[dict]:
-    """Parsea un .xlsx en memoria y devuelve lista de dicts (cabeceras tal cual).
-
-    Usa openpyxl para leer la primera hoja y construir filas. Devuelve [] si no hay datos.
-    """
+    """Parsea un .xlsx en memoria y devuelve lista de dicts (cabeceras tal cual)."""
     try:
         from openpyxl import load_workbook
     except Exception as e:
@@ -96,7 +93,6 @@ def _parse_xlsx(content: bytes) -> list[dict]:
     if not rows:
         return []
 
-    # Intentar detectar la fila de cabecera (no siempre es la primera fila en plantillas de Excel)
     header_idx = None
     tokens = ('placa', 'serial', 'usuario', 'tipo', 'marca', 'modelo', 'referencia')
     for i, row in enumerate(rows[:20]):
@@ -123,18 +119,16 @@ def _parse_xlsx(content: bytes) -> list[dict]:
 
 
 def _s(v) -> str:
-    """Convierte cualquier valor de celda a str limpio (evita 'bool has no .strip')."""
+    """Convierte cualquier valor de celda a str limpio."""
     if v is None:
         return ""
     return str(v).strip()
 
 
 def _normalize_header(h: str) -> str:
-    # Normaliza cabeceras: trim, lowercase, espacios -> guion_bajo, elimina caracteres no alfanuméricos
     if h is None:
         return ""
     s = h.strip().lower()
-    # Quita tildes/diacríticos: "Área" -> "Area"
     s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
     s = re.sub(r"\s+", "_", s)
     s = re.sub(r"[^a-z0-9_]+", "", s)
@@ -142,9 +136,7 @@ def _normalize_header(h: str) -> str:
 
 
 async def _insert_equipo(row: dict) -> dict | None:
-    # Normalizar booleano
     row["es_rentado"] = _s(row.get("es_rentado", "0")).lower() in ("1", "true", "si", "sí")
-    # Limpiar vacíos → None (convierte todo a str primero)
     data = {k: (_s(v) if _s(v) != "" else None) for k, v in row.items()}
     data["es_rentado"] = row["es_rentado"]
     return await EquipoModel.create(data)
@@ -199,7 +191,6 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
     if not content:
         raise HTTPException(status_code=400, detail="El archivo está vacío.")
 
-    # Soportar CSV y Excel (.xlsx)
     filas = []
     try:
         if filename.endswith(".csv"):
@@ -219,7 +210,6 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
     if not filas:
         raise HTTPException(status_code=422, detail="El CSV no contiene filas de datos.")
 
-    # Normalizar cabeceras y crear filas con keys normalizadas; convertir todos los valores a str
     try:
         filas_normalizadas = []
         for f in filas:
@@ -228,14 +218,9 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Error al normalizar cabeceras: {e}")
 
-    # Intentar mapear columnas comunes a nombres canónicos cuando el archivo
-    # usa cabeceras distintas (por ejemplo: 'PLACA COMPUTADORES' -> 'placa')
-    # Esto ayuda a aceptar plantillas de Excel que no coinciden exactamente.
     mapping = {}
     if filas_normalizadas:
         headers_norm = list(filas_normalizadas[0].keys())
-        # Mapas de alias sencillos: si la cabecera contiene alguno de estos tokens
-        # la usamos como fuente para la columna canónica.
         ALIASES = {
             'placa': ['placa', 'codigo', 'codigo_activo'],
             'serial': ['serial', 'sn', 'numero_serial'],
@@ -261,19 +246,16 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
                 if canon in mapping:
                     break
 
-        # Aplicar mapping a cada fila (añadir la clave canónica si falta)
         if mapping:
             for row in filas_normalizadas:
                 for canon, src in mapping.items():
                     if canon not in row or not row.get(canon):
                         row[canon] = row.get(src, '')
 
-    # Validar que existan las columnas requeridas (usando cabeceras normalizadas)
     columnas_csv = set(filas_normalizadas[0].keys())
     faltantes = [c for c in REQUIRED[entidad] if c not in columnas_csv]
     if faltantes:
         if dry_run:
-            # En dry_run devolvemos una vista previa y las columnas faltantes
             sample = filas_normalizadas[:20]
             return {
                 "total": len(filas_normalizadas),
@@ -291,7 +273,6 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
     insertados = 0
     errores: list[dict] = []
 
-    # Si es dry_run ya devolvimos faltantes; si dry_run sin faltantes devolvemos preview
     if dry_run:
         sample = filas_normalizadas[:20]
         return {
@@ -301,11 +282,9 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
             "missing_columns": [],
         }
 
-    for idx, fila in enumerate(filas_normalizadas, start=2):   # start=2 porque fila 1 es cabecera
-        # Ignorar filas completamente vacías
+    for idx, fila in enumerate(filas_normalizadas, start=2):
         if all(_s(v) == "" for v in fila.values()):
             continue
-        # Validar campos requeridos
         vacios = [c for c in REQUIRED[entidad] if not str(fila.get(c, "")).strip()]
         if vacios:
             errores.append({
@@ -321,13 +300,11 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
             # Auto-attach: si estamos importando equipos, buscar PDFs en Doc/ y registrar
             if entidad == 'equipos' and created:
                 try:
-                    # buscar archivo en Doc por nombre exacto o por placa/usuario
                     doc_dir = Path(__file__).resolve().parents[2] / 'Doc'
                     placa = (fila.get('placa') or '').strip()
                     usuario = (fila.get('usuario_nombre') or fila.get('nombre') or '').strip()
 
                     def find_match():
-                        # 1) valores en la fila que parecen nombres de archivo
                         for v in fila.values():
                             if not v:
                                 continue
@@ -336,12 +313,10 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
                                 p = doc_dir / s
                                 if p.exists():
                                     return p
-                        # 2) buscar por placa en nombres de archivos
                         if placa:
                             for p in doc_dir.rglob('*.pdf'):
                                 if placa.lower() in p.name.lower():
                                     return p
-                        # 3) buscar por usuario tokens
                         if usuario:
                             tokens = [t for t in re.split(r"\s+", usuario) if t]
                             for p in doc_dir.rglob('*.pdf'):
@@ -352,20 +327,21 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
 
                     match = find_match()
                     if match:
-                        content = match.read_bytes()
+                        file_content = match.read_bytes()
                         UPLOADS_DIR = os.getenv('UPLOADS_DIR', 'uploads')
                         os.makedirs(UPLOADS_DIR, exist_ok=True)
-                        # crear nombre único en uploads
                         base = safe_filename(match.stem, default='doc')
                         ext = match.suffix or '.pdf'
                         new_name = f"{base}_{uuid.uuid4().hex[:8]}{ext}"
                         dest = Path(UPLOADS_DIR) / new_name
-                        dest.write_bytes(content)
+                        dest.write_bytes(file_content)
 
-                        # registrar documento
+                        # ✅ CORREGIDO: tipo era 'acta_entrega' (no existe en el enum).
+                        #    Ahora es 'Acta', que sí aparece en filtros y métricas de
+                        #    "equipos sin acta".
                         nuevo = await DocumentoModel.create({
                             'nombre': match.name,
-                            'tipo': 'acta_entrega',
+                            'tipo': 'Acta',
                             'equipo_id': created.get('id'),
                             'asignacion_id': None,
                             'usuario_id': None,
@@ -374,13 +350,16 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
                             'cargado_por': None,
                         })
                         if nuevo:
-                            # guardar blob en documentos_archivos también
                             try:
-                                await DocumentoModel.upsert_archivo(nuevo['id'], filename=match.name, mime_type='application/pdf', contenido=content)
+                                await DocumentoModel.upsert_archivo(
+                                    nuevo['id'],
+                                    filename=match.name,
+                                    mime_type='application/pdf',
+                                    contenido=file_content,
+                                )
                             except Exception:
                                 pass
                 except Exception:
-                    # no bloquear la importación por fallo en adjuntar archivos
                     pass
 
         except Exception as e:
@@ -410,11 +389,9 @@ async def descargar_plantilla(entidad: str):
 
     headers_row = HEADERS[entidad]
     output = io.StringIO()
-    # Delimitador ';' suele abrirse en columnas correctamente en Excel (ES)
     writer = csv.writer(output, delimiter=";")
     writer.writerow(headers_row)
 
-    # Fila de ejemplo
     ejemplos: dict[str, list] = {
         "equipos": [
             "EAC000001", "SN123456", "Laptop", "Lenovo", "ThinkPad L14",

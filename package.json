@@ -15,6 +15,7 @@
     "uuid": "^13.0.2"
   },
   "dependencies": {
+    "@heyputer/puter.js": "^2.5.1",
     "mysql2": "^3.22.3",
     "yargs": "^18.0.0"
   }

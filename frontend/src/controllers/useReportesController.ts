@@ -98,18 +98,53 @@ export function useReportesController() {
   }, [asignaciones, usuarios, equipos]);
 
   // ── Exportar a CSV ────────────────────────────────────────────────────────
+  /**
+   * Genera y descarga un archivo CSV correctamente formateado.
+   *
+   * ✅ CORRECCIONES aplicadas respecto a la versión original:
+   *
+   *  1. BOM UTF-8 (\uFEFF al inicio): Excel detecta la codificación automáticamente
+   *     y muestra tildes y ñ sin necesidad de pasos adicionales de importación.
+   *
+   *  2. Escape de comillas internas: si un valor contiene una comilla doble ("),
+   *     se duplica ("") según el estándar RFC 4180. Sin esto, el CSV queda
+   *     malformado y algunas celdas se desplazan.
+   *
+   *  3. Escape de saltos de línea: si un valor contiene \n o \r, se conserva
+   *     dentro de la celda entrecomillada sin romper la estructura del archivo.
+   *
+   *  4. Todos los valores van siempre entrecomillados para evitar ambigüedades
+   *     con comas, puntos y comas u otros separadores regionales.
+   */
   const exportarCSV = (datos: Record<string, string | number>[], nombreArchivo: string) => {
     if (!datos.length) return;
-    const headers = Object.keys(datos[0]).join(',');
-    const filas = datos.map((row) => Object.values(row).map((v) => `"${v}"`).join(','));
-    const csv = [headers, ...filas].join('\n');
+
+    const escaparCelda = (valor: string | number): string => {
+      const str = String(valor ?? '');
+      // Si contiene coma, comilla o salto de línea → entrecomillar y escapar comillas internas
+      const necesitaComillas = str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r');
+      const escapado = str.replace(/"/g, '""'); // RFC 4180: " → ""
+      return necesitaComillas ? `"${escapado}"` : `"${escapado}"`;
+      // Nota: aquí siempre ponemos comillas por simplicidad y consistencia
+    };
+
+    const headers = Object.keys(datos[0]).map(escaparCelda).join(',');
+    const filas = datos.map((row) =>
+      Object.values(row).map(escaparCelda).join(',')
+    );
+
+    // ✅ \uFEFF = BOM UTF-8 — hace que Excel abra el archivo sin preguntar codificación
+    const csv = '\uFEFF' + [headers, ...filas].join('\r\n'); // \r\n = estándar RFC 4180
+
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${nombreArchivo}_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a); // necesario en Firefox
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url); // ✅ liberar memoria inmediatamente después de usar
   };
 
   return { reporteInventario, reporteSinDocs, reporteHistorial, exportarCSV, loading, error };

@@ -4,21 +4,50 @@ import { useDocumentosController } from '../../../controllers/useDocumentosContr
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
-import { Plus, FileText, Download } from 'lucide-react';
+import { Plus, FileText, Download, Paperclip } from 'lucide-react';
 import type { TipoDocumento } from '../../../models/types/index';
 import { documentosApi } from '../../../services/api';
 
 const TIPOS: TipoDocumento[] = ['Acta','Hoja de vida','Factura','Garantía','Contrato','Manual','Otro'];
 
+interface FormDocumento {
+  nombre: string;
+  tipo: TipoDocumento | '';
+  equipo_id: string;
+  usuario_id: string;
+  url: string;
+  cargado_por: string;
+  archivo: File | null;
+}
+
+const FORM_VACIO: FormDocumento = {
+  nombre: '', tipo: '', equipo_id: '', usuario_id: '', url: '', cargado_por: 'Admin', archivo: null,
+};
+
 export function DocumentosPage() {
   const ctrl = useDocumentosController();
-  const [form, setForm] = useState<{ nombre: string; tipo: TipoDocumento | ''; equipo_id: string; usuario_id: string; url: string; cargado_por: string }>({
-    nombre: '', tipo: '', equipo_id: '', usuario_id: '', url: '', cargado_por: 'Admin',
-  });
+  const [form, setForm] = useState<FormDocumento>(FORM_VACIO);
+  const [formError, setFormError] = useState('');
 
   const handleSubir = () => {
-    if (!form.nombre || !form.tipo) return;
-    ctrl.subir({ nombre: form.nombre, tipo: form.tipo as TipoDocumento, equipo_id: form.equipo_id || undefined, usuario_id: form.usuario_id || undefined, url: form.url || '#', cargado_por: form.cargado_por });
+    if (!form.nombre || !form.tipo) {
+      setFormError('El nombre y el tipo son obligatorios.');
+      return;
+    }
+    if (!form.archivo && !form.url) {
+      setFormError('Adjunta un archivo o indica una URL.');
+      return;
+    }
+    setFormError('');
+    ctrl.subir({
+      nombre: form.nombre,
+      tipo: form.tipo as TipoDocumento,
+      equipo_id: form.equipo_id || undefined,
+      usuario_id: form.usuario_id || undefined,
+      url: form.url,
+      cargado_por: form.cargado_por,
+      archivo: form.archivo ?? undefined,
+    });
   };
 
   const tipoVariant: Record<TipoDocumento, 'blue' | 'green' | 'orange' | 'purple' | 'indigo' | 'gray' | 'yellow'> = {
@@ -35,7 +64,7 @@ export function DocumentosPage() {
           {TIPOS.map((t) => <option key={t}>{t}</option>)}
         </select>
         <div className="sm:ml-auto">
-          <Button icon={<Plus size={16} />} onClick={() => { setForm({ nombre: '', tipo: '', equipo_id: '', usuario_id: '', url: '', cargado_por: 'Admin' }); ctrl.setModalAbierto(true); }} className="w-full sm:w-auto">
+          <Button icon={<Plus size={16} />} onClick={() => { setForm(FORM_VACIO); setFormError(''); ctrl.setModalAbierto(true); }} className="w-full sm:w-auto">
             Subir documento
           </Button>
         </div>
@@ -96,13 +125,32 @@ export function DocumentosPage() {
 
       <Modal abierto={ctrl.modalAbierto} onCerrar={() => ctrl.setModalAbierto(false)} titulo="Subir documento" size="md">
         <div className="space-y-4">
+          {formError && <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{formError}</div>}
           <Field label="Nombre del documento *" value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} />
           <SelectField label="Tipo *" value={form.tipo} onChange={(e) => setForm((f) => ({ ...f, tipo: e.target.value as TipoDocumento }))} options={TIPOS.map((t) => ({ value: t, label: t }))} />
           <SelectField label="Equipo relacionado" value={form.equipo_id} onChange={(e) => setForm((f) => ({ ...f, equipo_id: e.target.value }))}
             options={ctrl.equipos.map((e) => ({ value: e.id, label: `${e.placa} – ${e.tipo_equipo}` }))} />
           <SelectField label="Usuario relacionado" value={form.usuario_id} onChange={(e) => setForm((f) => ({ ...f, usuario_id: e.target.value }))}
             options={ctrl.usuarios.map((u) => ({ value: u.id, label: u.nombre }))} />
-          <Field label="URL / Ruta del archivo" value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} placeholder="/docs/archivo.pdf" />
+
+          {/* Archivo adjunto */}
+          <div className="flex flex-col gap-1">
+            <label htmlFor="doc-archivo" className="text-sm font-medium text-slate-700">Archivo adjunto</label>
+            <input
+              id="doc-archivo"
+              type="file"
+              onChange={(e) => setForm((f) => ({ ...f, archivo: e.target.files?.[0] ?? null }))}
+              className="text-sm text-slate-600 cursor-pointer file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:text-sm file:font-medium hover:file:bg-blue-100"
+            />
+            {form.archivo && (
+              <p className="flex items-center gap-1 text-xs text-slate-500">
+                <Paperclip size={12} />
+                {form.archivo.name} ({(form.archivo.size / 1024).toFixed(1)} KB)
+              </p>
+            )}
+          </div>
+
+          <Field label="URL externa (opcional si adjuntas archivo)" value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} placeholder="https://... o /docs/archivo.pdf" />
         </div>
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
           <Button variant="outline" onClick={() => ctrl.setModalAbierto(false)}>Cancelar</Button>

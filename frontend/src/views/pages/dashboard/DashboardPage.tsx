@@ -26,7 +26,7 @@ const ESTADO_COLORS: Record<string, string> = {
   Baja: '#94a3b8',
   'En revisión': '#f59e0b',
   Rentado: '#8b5cf6',
-  Desposicion: '#6366f1',
+  Disposicion: '#6366f1',
 };
 
 export function DashboardPage() {

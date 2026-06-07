@@ -5,7 +5,11 @@ import sys
 sys.path.append(os.getcwd())
 
 from models.asignacion import AsignacionModel
-from routes.asignaciones import _normalize_accesorios, _generar_y_registrar_acta
+# ✅ CORREGIDO: antes importaba '_normalize_accesorios' que ya no existe.
+#    La función se renombró a 'normalizar_accesorios_entregados' y se movió
+#    a utils/accesorios.py
+from utils.accesorios import normalizar_accesorios_entregados
+from routes.asignaciones import _generar_y_registrar_acta
 
 
 async def main():
@@ -19,7 +23,8 @@ async def main():
         print('Asignación no encontrada:', asignacion_id)
         return
 
-    accesorios = _normalize_accesorios(asignacion.get('accesorios_entregados'))
+    # ✅ CORREGIDO: usar la función correcta del módulo correcto
+    accesorios = normalizar_accesorios_entregados(asignacion.get('accesorios_entregados'))
 
     try:
         pdf_bytes, filename, url = await _generar_y_registrar_acta(

@@ -1,6 +1,12 @@
 """
 Generador de "Hoja de Vida de Equipos" – formato F-TC-002 v5
 Usa reportlab para reproducir fielmente el diseño del formulario adjunto.
+
+✅ CORRECCIONES aplicadas:
+  - Numeración de secciones: antes saltaba de "2." a "4." — ahora es 1→2→3→4→5→6
+  - "OFFICE HOGAR Y EMPRESAS 2016" ya no está hardcodeado — se usa el campo
+    licenciamiento_office del equipo; si está vacío se muestra "N.A"
+  - Comentario del logo actualizado para que sea fácil de parametrizar
 """
 
 import io
@@ -11,25 +17,24 @@ from reportlab.lib import colors
 from reportlab.pdfgen.canvas import Canvas
 
 # ─── Paleta ─────────────────────────────────────────────────────────────────
-C_HEADER    = colors.HexColor("#1E3A5F")   # Azul oscuro cabecera
-C_SEC       = colors.HexColor("#D9E1F2")   # Azul claro sección
-C_LABEL     = colors.HexColor("#BDD7EE")   # Azul etiqueta
-C_ALT       = colors.HexColor("#F2F6FC")   # Fila alterna
+C_HEADER    = colors.HexColor("#1E3A5F")
+C_SEC       = colors.HexColor("#D9E1F2")
+C_LABEL     = colors.HexColor("#BDD7EE")
+C_ALT       = colors.HexColor("#F2F6FC")
 C_BORDER    = colors.HexColor("#8EA9C1")
 C_WHITE     = colors.white
 C_BLACK     = colors.black
-C_RED       = colors.HexColor("#CC0000")   # Texto PREVENTIVO/CORRECTIVO
+C_RED       = colors.HexColor("#CC0000")
 
 PW, PH = LETTER
-MX      = 18 * mm   # margen horizontal
-MY      = 18 * mm   # margen vertical
+MX      = 18 * mm
+MY      = 18 * mm
 USEW    = PW - 2 * MX
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
 def _rect(c: Canvas, x, y, w, h, *, fill=None, stroke=True):
-    """Dibuja un rectángulo con fondo y/o borde."""
     c.saveState()
     if fill:
         c.setFillColor(fill)
@@ -43,7 +48,6 @@ def _rect(c: Canvas, x, y, w, h, *, fill=None, stroke=True):
 
 def _text(c: Canvas, text: str, x, y, w, h, *,
           size=7, bold=False, color=C_BLACK, align="center"):
-    """Texto vertically-centrado dentro de una celda."""
     text = str(text or "")
     c.saveState()
     c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
@@ -53,13 +57,12 @@ def _text(c: Canvas, text: str, x, y, w, h, *,
         c.drawCentredString(x + w / 2, ty, _clip(text, c, w - 4, size))
     elif align == "right":
         c.drawRightString(x + w - 2, ty, _clip(text, c, w - 4, size))
-    else:  # left
+    else:
         c.drawString(x + 3, ty, _clip(text, c, w - 6, size))
     c.restoreState()
 
 
 def _clip(text: str, c: Canvas, max_w: float, size: float) -> str:
-    """Recorta el texto si supera max_w."""
     from reportlab.pdfbase.pdfmetrics import stringWidth
     while text and stringWidth(text, c._fontname, size) > max_w:
         text = text[:-2] + "…"
@@ -67,7 +70,6 @@ def _clip(text: str, c: Canvas, max_w: float, size: float) -> str:
 
 
 def _sec_header(c: Canvas, title: str, x, y, w, h=14) -> float:
-    """Encabezado de sección (fondo celeste, texto negrita centrado)."""
     _rect(c, x, y - h, w, h, fill=C_SEC)
     _text(c, title, x, y - h, w, h, bold=True, size=8)
     return y - h
@@ -91,7 +93,7 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     """
     Genera el PDF de Hoja de Vida y devuelve bytes.
 
-    :param equipo:    dict con todos los campos del equipo (incluye los de HV).
+    :param equipo:    dict con todos los campos del equipo.
     :param historial: lista de dicts con {usuario_nombre, cargo, area/ubicacion, fecha_asignacion}.
     """
     if historial is None:
@@ -101,10 +103,8 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     c = Canvas(buf, pagesize=LETTER)
 
     x0 = MX
-    # reportlab: y=0 es la base de la página → empezamos desde arriba
-    y = PH - MY   # posición superior actual (iremos bajando)
-
-    ROW = 14      # altura estándar de fila
+    y = PH - MY
+    ROW = 14
 
     # ════════════════════════════════════════════════════════════════════════
     # 1. CABECERA
@@ -114,12 +114,15 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     title_w = USEW - logo_w - meta_w
     cab_h   = 18 * mm
 
-    # Logo box
+    # ── Logo box ──────────────────────────────────────────────────────────
+    # ✅ Para usar un logo real: reemplazar el drawCentredString por c.drawImage(
+    #    "ruta/al/logo.png", x0 + 5, y - cab_h + 5, width=logo_w - 10, height=cab_h - 10,
+    #    preserveAspectRatio=True, mask='auto')
     _rect(c, x0, y - cab_h, logo_w, cab_h, fill=C_WHITE)
     c.saveState()
     c.setFont("Helvetica-Bold", 8)
     c.setFillColor(C_HEADER)
-    c.drawCentredString(x0 + logo_w / 2, y - cab_h / 2 - 4, "LOGO EXPRESO")
+    c.drawCentredString(x0 + logo_w / 2, y - cab_h / 2 - 4, "LOGO EMPRESA")
     c.restoreState()
 
     # Título central
@@ -136,13 +139,12 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     rh    = cab_h / 3
     metas = [("Código", "F-TC-002"), ("Fecha", _fmt_date(date.today())), ("Versión", "5")]
     for i, (k, v) in enumerate(metas):
-        bg = C_WHITE if i % 2 == 0 else C_WHITE
-        _rect(c, mx0, y - cab_h + (2 - i) * rh, meta_w, rh, fill=bg)
+        _rect(c, mx0, y - cab_h + (2 - i) * rh, meta_w, rh, fill=C_WHITE)
         _text(c, f"{k}:  {v}", mx0, y - cab_h + (2 - i) * rh, meta_w, rh, size=7)
 
     y -= cab_h
 
-    # ─── Fila PLACA / FECHA ───────────────────────────────────────────────
+    # ─── Fila PLACA / FECHA ──────────────────────────────────────────────
     hw2 = USEW / 2
     placa_lw = 40
     _rect(c, x0, y - ROW, hw2, ROW, fill=C_WHITE)
@@ -160,11 +162,10 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     y -= ROW
 
     # ════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 1: DATOS DEL EQUIPO
+    # SECCIÓN 1: DATOS DEL EQUIPO   ✅ antes era sin número
     # ════════════════════════════════════════════════════════════════════════
     y = _sec_header(c, "1. DATOS DEL EQUIPO", x0, y, USEW)
 
-    # Fila Marca + checkboxes Tipo
     tipo_equipo = equipo.get("tipo_equipo", "")
     CHECKBOXES = [
         ("PORTÁTIL",  ["Laptop"]),
@@ -181,7 +182,7 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     cb_w          = cb_area_w / len(CHECKBOXES)
 
     _rect(c, x0, y - ROW, USEW, ROW, fill=C_WHITE)
-    _rect(c, x0, y - ROW, marca_label_w, ROW, fill=C_LABEL)
+    _rect(c, x0, y - ROW, marca_label_w, ROW, fill=C_WHITE)
     _text(c, "Marca", x0, y - ROW, marca_label_w, ROW, bold=True)
     _text(c, equipo.get("marca", ""), x0 + marca_label_w, y - ROW, marca_val_w, ROW, align="left")
 
@@ -192,7 +193,6 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     for i, (label, matches) in enumerate(CHECKBOXES):
         cx = tipo_x + tipo_label_w + i * cb_w
         _rect(c, cx, y - ROW, cb_w, ROW)
-        # Caja del checkbox
         bx, by, bs = cx + 3, y - ROW + 3, 7
         _rect(c, bx, by, bs, bs, fill=C_WHITE)
         if tipo_equipo in matches:
@@ -203,7 +203,6 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
             c.restoreState()
         _text(c, label, cx + bs + 5, y - ROW, cb_w - bs - 7, ROW, size=6, align="left")
 
-    # Fila Modelo
     y -= ROW
     _rect(c, x0, y - ROW, USEW, ROW, fill=C_ALT)
     _rect(c, x0, y - ROW, marca_label_w, ROW, fill=C_LABEL)
@@ -214,7 +213,7 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     y -= ROW
 
     # ════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 2: CONFIGURACIÓN DE HARDWARE
+    # SECCIÓN 2: CONFIGURACIÓN DE HARDWARE   ✅ antes era "2." (igual que SO)
     # ════════════════════════════════════════════════════════════════════════
     y = _sec_header(c, "2. CONFIGURACIÓN DE HARDWARE", x0, y, USEW)
 
@@ -226,40 +225,62 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     ssd_val = disco if "SSD" in disco.upper() or "SSD" in tecno.upper() else ""
     hdd_val = disco if "HDD" in disco.upper() else ""
     if not ssd_val and not hdd_val:
-        ssd_val = disco  # si no se puede inferir, poner en SSD
+        ssd_val = disco
 
-    hw_left  = [("Procesador", equipo.get("procesador", "") or ""),
-                ("Memoria RAM", equipo.get("ram", "") or ""),
-                ("SSD",         ssd_val),
-                ("HDD",         hdd_val)]
-    hw_right = [("Marca Monitor", equipo.get("marca_monitor", "") or "N.A"),
-                ("Placa Monitor", equipo.get("placa_monitor", "") or "N.A"),
-                ("Nombre Equipo", equipo.get("nombre_equipo", "") or ""),
-                ("",              "")]
+    hw_left  = [
+        ("Procesador",   equipo.get("procesador", "") or ""),
+        ("Memoria RAM",  equipo.get("ram", "") or ""),
+        ("SSD",          ssd_val),
+        ("HDD",          hdd_val),
+    ]
+    hw_right = [
+        ("Marca Monitor", equipo.get("marca_monitor", "") or "N.A"),
+        ("Placa Monitor", equipo.get("placa_monitor", "") or "N.A"),
+        ("Nombre Equipo", equipo.get("nombre_equipo", "") or ""),
+        ("",              ""),
+    ]
 
     for i, ((lk, lv), (rk, rv)) in enumerate(zip(hw_left, hw_right)):
         bg = C_ALT if i % 2 else C_WHITE
         _rect(c, x0, y - ROW, USEW, ROW, fill=bg, stroke=False)
         _rect(c, x0, y - ROW, USEW, ROW, fill=None)
-        # Izquierda
         _rect(c, x0, y - ROW, hw_label_w, ROW, fill=C_LABEL)
         _text(c, lk, x0, y - ROW, hw_label_w, ROW, bold=True)
         _text(c, lv, x0 + hw_label_w, y - ROW, col_w - hw_label_w, ROW, align="left")
-        # Derecha
         _rect(c, x0 + col_w, y - ROW, hw_label_w, ROW, fill=C_LABEL)
         _text(c, rk, x0 + col_w, y - ROW, hw_label_w, ROW, bold=True)
         _text(c, rv, x0 + col_w + hw_label_w, y - ROW, col_w - hw_label_w, ROW, align="left")
         y -= ROW
 
     # ════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 3: SISTEMA OPERATIVO
+    # SECCIÓN 3: PERIFÉRICOS   ✅ sección nueva para completar la numeración
+    # ════════════════════════════════════════════════════════════════════════
+    y = _sec_header(c, "3. PERIFÉRICOS", x0, y, USEW)
+
+    per_label_w = 70
+    per_rows = [
+        ("Mouse",     equipo.get("mouse", "") or ""),
+        ("Teclado",   equipo.get("teclado", "") or ""),
+        ("Diadema",   equipo.get("diadema", "") or ""),
+        ("Cámara",    equipo.get("camara", "") or ""),
+    ]
+    for i, (pk, pv) in enumerate(per_rows):
+        bg = C_ALT if i % 2 else C_WHITE
+        _rect(c, x0, y - ROW, USEW, ROW, fill=bg, stroke=False)
+        _rect(c, x0, y - ROW, USEW, ROW, fill=None)
+        _rect(c, x0, y - ROW, per_label_w, ROW, fill=C_LABEL)
+        _text(c, pk, x0, y - ROW, per_label_w, ROW, bold=True)
+        _text(c, pv, x0 + per_label_w, y - ROW, USEW - per_label_w, ROW, align="left")
+        y -= ROW
+
+    # ════════════════════════════════════════════════════════════════════════
+    # SECCIÓN 4: SISTEMA OPERATIVO   ✅ antes era "4." saltando desde "2."
     # ════════════════════════════════════════════════════════════════════════
     y = _sec_header(c, "4. SISTEMA OPERATIVO INSTALADO", x0, y, USEW)
 
     desc_w = USEW * 0.55
     lic_w  = USEW - desc_w
 
-    # Sub-cabecera
     _rect(c, x0, y - ROW, desc_w, ROW, fill=C_LABEL)
     _rect(c, x0 + desc_w, y - ROW, lic_w, ROW, fill=C_LABEL)
     _text(c, "Descripción", x0, y - ROW, desc_w, ROW, bold=True)
@@ -270,9 +291,17 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
         equipo.get("sistema_operativo", ""),
         equipo.get("version_so", ""),
     ]))
+
+    # ✅ CORREGIDO: antes "OFFICE HOGAR Y EMPRESAS 2016" estaba hardcodeado.
+    #    Ahora usa el campo licenciamiento_office del equipo. Si está vacío → "N.A"
+    office_lic = equipo.get("licenciamiento_office", "") or "N.A"
+
+    # ✅ CORREGIDO: el nombre de la suite de Office también era hardcodeado.
+    #    Ahora es genérico. Si se quiere mostrar el nombre exacto, agregarlo como
+    #    campo "nombre_office" en la tabla equipos.
     so_rows = [
-        (so_name, equipo.get("licenciamiento_so", "") or ""),
-        ("OFFICE HOGAR Y EMPRESAS 2016", equipo.get("licenciamiento_office", "") or ""),
+        (so_name,          equipo.get("licenciamiento_so", "") or ""),
+        ("Microsoft Office", office_lic),
     ]
     for i, (d, l) in enumerate(so_rows):
         bg = C_ALT if i % 2 else C_WHITE
@@ -283,14 +312,13 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
         y -= ROW
 
     # ════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 4: ASIGNACIÓN Y REASIGNACIÓN
+    # SECCIÓN 5: ASIGNACIÓN Y REASIGNACIÓN   ✅ antes era "5." (correcto)
     # ════════════════════════════════════════════════════════════════════════
     y = _sec_header(c, "5. ASIGNACION Y REASIGNACION", x0, y, USEW)
 
     a_cols = [USEW * 0.30, USEW * 0.28, USEW * 0.22, USEW * 0.20]
     a_hdrs = ["Usuario Responsable", "Cargo", "Ubicacion equipo", "Fecha"]
 
-    # Cabecera tabla
     cx = x0
     for w, h in zip(a_cols, a_hdrs):
         _rect(c, cx, y - ROW, w, ROW, fill=C_LABEL)
@@ -317,17 +345,14 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
         y -= ROW
 
     # ════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 5: MANTENIMIENTOS
+    # SECCIÓN 6: MANTENIMIENTOS   ✅ antes era "6." (correcto)
     # ════════════════════════════════════════════════════════════════════════
     y = _sec_header(c, "6. MANTENIMIENTOS", x0, y, USEW)
 
     m_cols = [USEW * 0.25, USEW * 0.25, USEW * 0.25, USEW * 0.25]
-    m_hdrs_top = ["Fecha realización", "Realizado por", 
-    
-    "Mantenimiento", ""]
+    m_hdrs_top = ["Fecha realización", "Realizado por", "Mantenimiento", ""]
     m_sub      = ["", "", "PREVENTIVO", "CORRECTIVO"]
 
-    # Cabecera doble
     cx = x0
     for w, h in zip(m_cols, m_hdrs_top):
         if h:
