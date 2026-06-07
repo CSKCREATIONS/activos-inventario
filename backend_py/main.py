@@ -13,7 +13,7 @@ from routes import (
     documentos, dashboard, susuarios, suministros,
     auth, licencias, importar,
 )
-from routes.auth import get_current_user
+from dependencies  import get_current_user
 
 load_dotenv()
 

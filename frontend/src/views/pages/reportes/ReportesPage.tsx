@@ -1,146 +1,120 @@
-// CONTROLLER: Reportes
-// Genera los datos para los reportes exportables — datos desde la API REST.
+// VIEW: Página Reportes – exporta un componente React, no un hook
+import { useReportesController } from '../../../controllers/useReportesController';
+import { Card, Button, Table, Th, Td, Badge } from '../../components/ui/index';
+import { Download, FileSpreadsheet, FileText, Printer } from 'lucide-react';
 
-import { useMemo, useEffect, useCallback, useState } from 'react';
-import { useEquiposStore } from '../../../models/stores/useEquiposStore';
-import { useUsuariosStore } from '../../../models/stores/useUsuariosStore';
-import { useAsignacionesStore } from '../../../models/stores/useAsignacionesStore';
-import { useDocumentosStore } from '../../../models/stores/useAccesoriosStore';
-import { equiposApi, usuariosApi, asignacionesApi, documentosApi } from '../../../services/api';
+export function ReportesPage() {
+  const { reporteInventario, reporteSinDocs, reporteHistorial, exportarCSV, loading, error } = useReportesController();
 
-// ─── Helper para escapar valores CSV según RFC 4180 ─────────────────────────
-function escapeCSV(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  
-  let str = String(value);
-  
-  // Si contiene comillas dobles, duplicarlas
-  if (str.includes('"')) {
-    str = str.replace(/"/g, '""');
-  }
-  
-  // Si contiene comas, saltos de línea o comillas dobles, envolver entre comillas dobles
-  if (str.includes(',') || str.includes('\n') || str.includes('\r') || str.includes('"')) {
-    str = `"${str}"`;
-  }
-  
-  return str;
-}
+  const handleExportInventario = () => exportarCSV(reporteInventario, 'inventario_completo');
+  const handleExportSinDocs = () => exportarCSV(reporteSinDocs, 'equipos_sin_documentos');
+  const handleExportHistorial = () => exportarCSV(reporteHistorial, 'historial_asignaciones');
 
-export function useReportesController() {
-  const { equipos, setEquipos } = useEquiposStore();
-  const { usuarios, setUsuarios } = useUsuariosStore();
-  const { asignaciones, setAsignaciones } = useAsignacionesStore();
-  const { documentos, setDocumentos } = useDocumentosStore();
+  if (loading) return <div className="p-8 text-center text-slate-500">Cargando reportes...</div>;
+  if (error) return <div className="p-8 text-center text-red-600">Error: {error}</div>;
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="space-y-8">
+      <h1 className="text-2xl font-bold text-slate-800">Reportes</h1>
 
-  // ── Carga inicial (sin cambios) ──────────────────────────────────────────
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [eqRes, usrRes, asigRes, docRes] = await Promise.all([
-        equiposApi.getAll(),
-        usuariosApi.getAll(),
-        asignacionesApi.getAll(),
-        documentosApi.getAll(),
-      ]);
-      setEquipos(eqRes.data);
-      setUsuarios(usrRes.data);
-      setAsignaciones(asigRes.data);
-      setDocumentos(docRes.data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al cargar datos para reportes.');
-    } finally {
-      setLoading(false);
-    }
-  }, [setEquipos, setUsuarios, setAsignaciones, setDocumentos]);
+      {/* Botones de exportación */}
+      <div className="flex flex-wrap gap-3">
+        <Button icon={<Download size={16} />} onClick={handleExportInventario} className="bg-blue-600 text-white">
+          Exportar inventario (CSV)
+        </Button>
+        <Button icon={<FileSpreadsheet size={16} />} onClick={handleExportSinDocs} variant="outline">
+          Exportar equipos sin documentos
+        </Button>
+        <Button icon={<FileText size={16} />} onClick={handleExportHistorial} variant="outline">
+          Exportar historial de asignaciones
+        </Button>
+      </div>
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+      {/* Reporte: inventario completo */}
+      <Card>
+        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+          <h2 className="font-semibold text-slate-700">Inventario completo</h2>
+          <Badge variant="blue">{reporteInventario.length} equipos</Badge>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <thead>
+              <tr>
+                <Th>Placa</Th><Th>Serial</Th><Th>Tipo</Th><Th>Marca/Modelo</Th>
+                <Th>SO</Th><Th>Criticidad</Th><Th>Estado</Th><Th>Responsable</Th><Th>Área</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {reporteInventario.slice(0, 10).map((eq, idx) => (
+                <tr key={idx} className="hover:bg-slate-50">
+                  <Td className="font-mono font-medium">{eq.placa}</Td>
+                  <Td>{eq.serial}</Td>
+                  <Td>{eq.tipo}</Td>
+                  <Td>{eq.marca} {eq.modelo}</Td>
+                  <Td>{eq.so}</Td>
+                  <Td><Badge variant={eq.criticidad === 'Crítica' ? 'red' : 'gray'}>{eq.criticidad}</Badge></Td>
+                  <Td><Badge variant={eq.estado === 'Asignado' ? 'green' : 'blue'}>{eq.estado}</Badge></Td>
+                  <Td>{eq.responsable}</Td>
+                  <Td>{eq.area}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          {reporteInventario.length > 10 && (
+            <div className="p-3 text-center text-xs text-slate-400 border-t">
+              Mostrando 10 de {reporteInventario.length} registros
+            </div>
+          )}
+        </div>
+      </Card>
 
-  // ── Reporte: inventario completo (sin cambios) ───────────────────────────
-  const reporteInventario = useMemo(() => {
-    return equipos.map((e) => {
-      const asignacion = asignaciones.find((a) => a.equipo_id === e.id && a.estado === 'Activa');
-      const usuario = asignacion ? usuarios.find((u) => u.id === asignacion.usuario_id) : null;
-      return {
-        placa: e.placa,
-        serial: e.serial ?? '',
-        tipo: e.tipo_equipo,
-        marca: e.marca ?? '',
-        modelo: e.modelo ?? '',
-        so: e.sistema_operativo ?? '',
-        criticidad: e.criticidad,
-        confidencialidad: e.confidencialidad,
-        estado: e.estado,
-        responsable: usuario?.nombre ?? 'Sin asignar',
-        area: usuario?.area ?? '',
-        es_rentado: e.es_rentado ? 'Sí' : 'No',
-        fecha_registro: e.fecha_registro,
-      };
-    });
-  }, [equipos, asignaciones, usuarios]);
+      {/* Reporte: equipos sin documentos */}
+      <Card>
+        <div className="px-6 py-4 border-b border-slate-200">
+          <h2 className="font-semibold text-slate-700">Equipos sin acta o sin hoja de vida</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <thead><tr><Th>Placa</Th><Th>Tipo</Th><Th>Estado</Th><Th>Sin acta</Th><Th>Sin hoja de vida</Th></tr></thead>
+            <tbody>
+              {reporteSinDocs.map((eq, idx) => (
+                <tr key={idx}>
+                  <Td className="font-mono">{eq.placa}</Td>
+                  <Td>{eq.tipo}</Td>
+                  <Td>{eq.estado}</Td>
+                  <Td>{eq.sin_acta === 'Sí' ? <Badge variant="red">Sí</Badge> : <Badge variant="green">No</Badge>}</Td>
+                  <Td>{eq.sin_hoja_vida === 'Sí' ? <Badge variant="red">Sí</Badge> : <Badge variant="green">No</Badge>}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      </Card>
 
-  // ── Reporte: equipos sin documentos (sin cambios) ────────────────────────
-  const reporteSinDocs = useMemo(() => {
-    const equiposConActa = new Set(documentos.filter((d) => d.tipo === 'Acta').map((d) => d.equipo_id));
-    const equiposConHv = new Set(documentos.filter((d) => d.tipo === 'Hoja de vida').map((d) => d.equipo_id));
-    return equipos
-      .filter((e) => e.estado !== 'Baja')
-      .filter((e) => !equiposConActa.has(e.id) || !equiposConHv.has(e.id))
-      .map((e) => ({
-        placa: e.placa,
-        tipo: e.tipo_equipo,
-        estado: e.estado,
-        sin_acta: equiposConActa.has(e.id) ? 'No' : 'Sí',
-        sin_hoja_vida: equiposConHv.has(e.id) ? 'No' : 'Sí',
-      }));
-  }, [equipos, documentos]);
-
-  // ── Reporte: historial de asignaciones (sin cambios) ─────────────────────
-  const reporteHistorial = useMemo(() => {
-    return asignaciones.map((a) => {
-      const usuario = usuarios.find((u) => u.id === a.usuario_id);
-      const equipo = equipos.find((e) => e.id === a.equipo_id);
-      return {
-        equipo_placa: equipo?.placa ?? '',
-        equipo_tipo: equipo?.tipo_equipo ?? '',
-        usuario: usuario?.nombre ?? '',
-        area: usuario?.area ?? '',
-        fecha_asignacion: a.fecha_asignacion,
-        fecha_devolucion: a.fecha_devolucion ?? 'Activa',
-        estado: a.estado,
-      };
-    }).sort((a, b) => b.fecha_asignacion.localeCompare(a.fecha_asignacion));
-  }, [asignaciones, usuarios, equipos]);
-
-  // ─── Exportar a CSV (corregido: BOM + escape de comillas) ─────────────────
-  const exportarCSV = (datos: Record<string, string | number>[], nombreArchivo: string) => {
-    if (!datos.length) return;
-    
-    // Obtener cabeceras
-    const headers = Object.keys(datos[0]);
-    
-    // Construir filas aplicando escapeCSV a cada valor
-    const filas = datos.map((fila) =>
-      headers.map((header) => escapeCSV(fila[header])).join(',')
-    );
-    
-    // Unir cabeceras y filas
-    const csvContent = [headers.join(','), ...filas].join('\n');
-    
-    // Añadir BOM UTF-8 (carácter \uFEFF) para que Excel interprete bien las tildes
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${nombreArchivo}_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return { reporteInventario, reporteSinDocs, reporteHistorial, exportarCSV, loading, error };
+      {/* Reporte: historial de asignaciones */}
+      <Card>
+        <div className="px-6 py-4 border-b border-slate-200">
+          <h2 className="font-semibold text-slate-700">Historial de asignaciones</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <thead><tr><Th>Equipo</Th><Th>Tipo</Th><Th>Usuario</Th><Th>Área</Th><Th>Fecha asignación</Th><Th>Fecha devolución</Th><Th>Estado</Th></tr></thead>
+            <tbody>
+              {reporteHistorial.slice(0, 20).map((h, idx) => (
+                <tr key={idx}>
+                  <Td className="font-mono">{h.equipo_placa}</Td>
+                  <Td>{h.equipo_tipo}</Td>
+                  <Td>{h.usuario}</Td>
+                  <Td>{h.area}</Td>
+                  <Td>{h.fecha_asignacion}</Td>
+                  <Td>{h.fecha_devolucion}</Td>
+                  <Td><Badge variant={h.estado === 'Activa' ? 'green' : 'gray'}>{h.estado}</Badge></Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      </Card>
+    </div>
+  );
 }

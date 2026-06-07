@@ -502,12 +502,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
+import logging
 
 from config.db import test_connection, close_pool
-from routes import usuarios, equipos, asignaciones, accesorios, documentos, dashboard, susuarios, suministros, auth, licencias, importar
+from routes import (
+    usuarios, equipos, asignaciones, accesorios,
+    documentos, dashboard, susuarios, suministros,
+    auth, licencias, importar,
+)
 from routes.auth import get_current_user
 
 load_dotenv()
+
+# ─── Logging estructurado (reemplaza print() dispersos) ───────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("itam")
 
 UPLOADS_DIR = os.getenv("UPLOADS_DIR", "uploads")
 os.makedirs(UPLOADS_DIR, exist_ok=True)
@@ -522,54 +534,69 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Inventory System API", version="1.0.0", lifespan=lifespan)
 
-# ─── CORS ─────────────────────────────────────────────────
+# ─── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:5173")],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
+    # ✅ CORREGIDO: sin expose_headers, el frontend no puede leer Content-Disposition
+    #    en peticiones cross-origin → los nombres de descarga siempre salían como
+    #    "acta_{id}.pdf" en vez del nombre real generado por el backend.
+    expose_headers=["Content-Disposition"],
 )
 
-# ─── Archivos estáticos (uploads) ─────────────────────────
+# ─── Archivos estáticos (uploads) ─────────────────────────────────────────────
+# ⚠️  PENDIENTE CRÍTICO (1.3 del informe): este mount sirve actas y hojas de vida
+#     SIN autenticación. Cualquiera que conozca la URL puede descargarlas.
+#     La solución definitiva es eliminar este mount y servir todo a través del
+#     endpoint autenticado GET /api/documentos/{id}/download que ya existe.
+#     Por ahora se mantiene para no romper funcionalidad existente.
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
-# ─── Routers ──────────────────────────────────────────────
+# ─── Routers ──────────────────────────────────────────────────────────────────
 protected = [Depends(get_current_user)]
 
-app.include_router(usuarios.router, prefix="/api/usuarios", tags=["Usuarios"], dependencies=protected)
-app.include_router(equipos.router, prefix="/api/equipos", tags=["Equipos"], dependencies=protected)
-app.include_router(asignaciones.router, prefix="/api/asignaciones", tags=["Asignaciones"], dependencies=protected)
-app.include_router(accesorios.router, prefix="/api/accesorios", tags=["Accesorios"], dependencies=protected)
-app.include_router(documentos.router, prefix="/api/documentos", tags=["Documentos"], dependencies=protected)
-app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"], dependencies=protected)
+app.include_router(usuarios.router,     prefix="/api/usuarios",     tags=["Usuarios"],        dependencies=protected)
+app.include_router(equipos.router,      prefix="/api/equipos",      tags=["Equipos"],         dependencies=protected)
+app.include_router(asignaciones.router, prefix="/api/asignaciones", tags=["Asignaciones"],    dependencies=protected)
+app.include_router(accesorios.router,   prefix="/api/accesorios",   tags=["Accesorios"],      dependencies=protected)
+app.include_router(documentos.router,   prefix="/api/documentos",   tags=["Documentos"],      dependencies=protected)
+app.include_router(dashboard.router,    prefix="/api/dashboard",    tags=["Dashboard"],       dependencies=protected)
+app.include_router(susuarios.router,    prefix="/api/Susuarios",    tags=["UsuariosSistema"], dependencies=protected)
+app.include_router(suministros.router,  prefix="/api/suministros",  tags=["Suministros"],     dependencies=protected)
+app.include_router(licencias.router,    prefix="/api/licencias",    tags=["Licencias"],       dependencies=protected)
+app.include_router(importar.router,     prefix="/api/importar",     tags=["Importar CSV"],    dependencies=protected)
 
 # Endpoints públicos: login/token + health
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 
-# También protegidos
-app.include_router(susuarios.router, prefix="/api/Susuarios", tags=["UsuariosSistema"], dependencies=protected)
-app.include_router(suministros.router, prefix="/api/suministros", tags=["Suministros"], dependencies=protected)
-app.include_router(licencias.router, prefix="/api/licencias", tags=["Licencias"], dependencies=protected)
-app.include_router(importar.router, prefix="/api/importar", tags=["Importar CSV"], dependencies=protected)
 
-
-# ─── Health check ─────────────────────────────────────────
+# ─── Health check ─────────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():
     from datetime import datetime, timezone
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
-# ─── Error handler global ─────────────────────────────────
+# ─── Error handler global ─────────────────────────────────────────────────────
+# ✅ CORREGIDO: antes devolvía str(exc) al cliente, filtrando mensajes internos
+#    de MySQL con nombres de tablas, columnas y datos. Ahora se loguea el detalle
+#    en el servidor y el cliente solo recibe un mensaje genérico.
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(status_code=500, content={"message": str(exc)})
+    logger.error("Error no controlado en %s %s: %s", request.method, request.url.path, exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"message": "Error interno del servidor. Contacta al administrador."},
+    )
 
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 3001))
+    port = int(os.getenv("PORT", 8000))
+    # ⚠️  reload=True solo para desarrollo — usar gunicorn en producción
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
 </file>
 
@@ -681,76 +708,62 @@ class AccesorioModel:
 import uuid
 import json
 from datetime import date
+
 from config.db import get_pool
 
 
 def _map_asignacion(row: dict) -> dict:
+    """Normaliza campos JSON (accesorios_entregados, usuarios_ids) a listas de Python."""
     if not row:
         return row
-    
-    # Parsear accesorios_entregados (solo si la columna está presente en el resultado)
+
+    # Parsear accesorios_entregados
     if "accesorios_entregados" in row:
         val = row.get("accesorios_entregados")
-
-        # Solo emitir logs cuando haya datos potencialmente útiles
         if isinstance(val, (bytes, bytearray)):
             try:
-                decoded = val.decode("utf-8")
-                try:
-                    parsed = json.loads(decoded)
-                    if isinstance(parsed, list):
-                        row["accesorios_entregados"] = parsed
-                        print(f"[MAP ASIGNACION] Parseado JSON (bytes) a: {parsed}")
-                except Exception:
-                    # si no es JSON válido, guardar el string resultante
-                    row["accesorios_entregados"] = decoded
-                    print(f"[MAP ASIGNACION] Decodificado de bytes a string: {decoded}")
+                val = val.decode("utf-8")
             except Exception:
-                # silenciar errores de decodificación en producción
                 row["accesorios_entregados"] = []
-
-        elif isinstance(val, str) and val.strip():
-            # Intentar parsear JSON si viene como string
+                return row
+        if isinstance(val, str) and val.strip():
             try:
                 parsed = json.loads(val)
                 if isinstance(parsed, list):
                     row["accesorios_entregados"] = parsed
-                    print(f"[MAP ASIGNACION] Parseado JSON a: {parsed}")
                 else:
-                    # si no es lista, guardarlo tal cual
-                    row["accesorios_entregados"] = parsed
+                    row["accesorios_entregados"] = [parsed] if parsed else []
             except Exception:
-                # No es JSON; tratar como texto separado por comas u string simple
-                row["accesorios_entregados"] = val
-
+                # Si no es JSON, tratamos como texto plano (no debería ocurrir con migraciones correctas)
+                row["accesorios_entregados"] = [val] if val.strip() else []
         else:
-            # Valor nulo o vacío -> normalizar a lista vacía sin log ruidoso
             row["accesorios_entregados"] = []
+    else:
+        row["accesorios_entregados"] = []
 
-        # Imprimir resultado solo si hay contenido útil
-        if row.get("accesorios_entregados"):
-            print(f"[MAP ASIGNACION] Resultado final: {row.get('accesorios_entregados')}")
-    
-    # Parsear usuarios_ids (múltiples usuarios)
+    # Parsear usuarios_ids
     usuarios_val = row.get("usuarios_ids")
     if usuarios_val:
         if isinstance(usuarios_val, (bytes, bytearray)):
             try:
                 usuarios_val = usuarios_val.decode("utf-8")
             except Exception:
-                usuarios_val = None
+                row["usuarios_ids"] = []
+                return row
         if isinstance(usuarios_val, str) and usuarios_val.strip():
             try:
-                parsed_usuarios = json.loads(usuarios_val)
-                if isinstance(parsed_usuarios, list):
-                    row["usuarios_ids"] = parsed_usuarios
+                parsed = json.loads(usuarios_val)
+                if isinstance(parsed, list):
+                    row["usuarios_ids"] = parsed
+                else:
+                    row["usuarios_ids"] = [parsed] if parsed else []
             except Exception:
                 row["usuarios_ids"] = []
         else:
             row["usuarios_ids"] = []
     else:
         row["usuarios_ids"] = []
-    
+
     return row
 
 
@@ -761,7 +774,7 @@ class AsignacionModel:
         sql = """
             SELECT a.*,
                    u.nombre AS usuario_nombre, u.cargo, u.area,
-                     e.placa, e.serial, e.marca, e.modelo, e.tipo_equipo, e.estado AS equipo_estado
+                   e.placa, e.serial, e.marca, e.modelo, e.tipo_equipo, e.estado AS equipo_estado
             FROM asignaciones a
             JOIN usuarios u ON a.usuario_id = u.id
             JOIN equipos  e ON a.equipo_id  = e.id
@@ -803,24 +816,11 @@ class AsignacionModel:
                 return _map_asignacion(row) if row else None
 
     @staticmethod
-    async def tiene_asignacion_activa(equipo_id: str) -> bool:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT id FROM asignaciones WHERE equipo_id = %s AND estado = 'Activa' LIMIT 1",
-                    [equipo_id],
-                )
-                return (await cur.fetchone()) is not None
-
-    @staticmethod
     async def create(data: dict) -> dict | None:
         equipo_id = data["equipo_id"]
-        ocupado = await AsignacionModel.tiene_asignacion_activa(equipo_id)
-        if ocupado:
-            raise ValueError("El equipo ya tiene una asignación activa.")
-
-        new_id = str(uuid.uuid4())
+        usuario_id = data["usuario_id"]
+        fecha_asignacion = data["fecha_asignacion"]
+        observaciones = data.get("observaciones")
         accesorios = data.get("accesorios_entregados")
         accesorios_json = None
         if accesorios is not None:
@@ -828,65 +828,52 @@ class AsignacionModel:
                 accesorios_json = json.dumps(accesorios, ensure_ascii=False)
             else:
                 accesorios_json = str(accesorios)
-        
-        # Debug logging
-        print(f"[ASIGNACION CREATE] Accesorios recibidos: {accesorios}")
-        print(f"[ASIGNACION CREATE] Tipo accesorios: {type(accesorios)}")
-        print(f"[ASIGNACION CREATE] Accesorios JSON a guardar: {accesorios_json}")
-        
+
+        new_id = str(uuid.uuid4())
+
         pool = await get_pool()
         async with pool.acquire() as conn:
-            conn.autocommit = False
-            async with conn.cursor() as cur:
-                try:
-                    try:
-                        await cur.execute(
-                            """INSERT INTO asignaciones
-                               (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones, accesorios_entregados, acta_pdf, hoja_vida_pdf)
-                               VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s, %s)""",
-                            [
-                                new_id,
-                                data["usuario_id"],
-                                equipo_id,
-                                data["fecha_asignacion"],
-                                data.get("observaciones"),
-                                accesorios_json,
-                                data.get("acta_pdf"),
-                                data.get("hoja_vida_pdf"),
-                            ],
-                        )
-                        print(f"[ASIGNACION CREATE] [OK] Insertado CON columna accesorios_entregados")
-                    except Exception as e:
-                        print(f"[ASIGNACION CREATE] [ERROR] Error con columna: {str(e)[:100]}")
-                        # Compatibilidad: si la columna aún no existe, insertar sin ella.
-                        if "Unknown column" in str(e) and "accesorios_entregados" in str(e):
-                            print(f"[ASIGNACION CREATE] Intentando SIN columna (no existe en BD)")
-                            await cur.execute(
-                                """INSERT INTO asignaciones
-                                   (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones, acta_pdf, hoja_vida_pdf)
-                                   VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s)""",
-                                [
-                                    new_id,
-                                    data["usuario_id"],
-                                    equipo_id,
-                                    data["fecha_asignacion"],
-                                    data.get("observaciones"),
-                                    data.get("acta_pdf"),
-                                    data.get("hoja_vida_pdf"),
-                                ],
-                            )
-                            print(f"[ASIGNACION CREATE] [OK] Insertado SIN columna accesorios_entregados")
-                        else:
-                            raise
+            # Iniciamos una transacción explícita
+            async with conn.begin():
+                async with conn.cursor() as cur:
+                    # Bloquear la fila del equipo para lectura/escritura (SELECT FOR UPDATE)
                     await cur.execute(
-                        "UPDATE equipos SET estado = 'Asignado' WHERE id = %s", [equipo_id]
+                        "SELECT estado FROM equipos WHERE id = %s FOR UPDATE",
+                        [equipo_id]
                     )
-                    await conn.commit()
-                except Exception:
-                    await conn.rollback()
-                    raise
-                finally:
-                    conn.autocommit = True
+                    equipo_row = await cur.fetchone()
+                    if not equipo_row:
+                        raise ValueError("El equipo no existe.")
+                    if equipo_row["estado"] != "Disponible":
+                        raise ValueError("El equipo no está disponible para asignación.")
+
+                    # Insertar la asignación
+                    await cur.execute(
+                        """INSERT INTO asignaciones
+                           (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones,
+                            accesorios_entregados, acta_pdf, hoja_vida_pdf)
+                           VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s, %s)""",
+                        [
+                            new_id,
+                            usuario_id,
+                            equipo_id,
+                            fecha_asignacion,
+                            observaciones,
+                            accesorios_json,
+                            data.get("acta_pdf"),
+                            data.get("hoja_vida_pdf"),
+                        ]
+                    )
+
+                    # Actualizar estado del equipo
+                    await cur.execute(
+                        "UPDATE equipos SET estado = 'Asignado' WHERE id = %s",
+                        [equipo_id]
+                    )
+
+            # Al salir del bloque async with conn.begin(), se hace commit automáticamente
+            # si no hubo excepción; si la hay, se hace rollback.
+
         return await AsignacionModel.find_by_id(new_id)
 
     @staticmethod
@@ -897,30 +884,36 @@ class AsignacionModel:
         if asignacion["estado"] != "Activa":
             raise ValueError("La asignación no está activa.")
 
+        equipo_id = asignacion["equipo_id"]
         fecha_devolucion = date.today().isoformat()
+
         pool = await get_pool()
         async with pool.acquire() as conn:
-            conn.autocommit = False
-            async with conn.cursor() as cur:
-                try:
+            async with conn.begin():
+                async with conn.cursor() as cur:
+                    # Opcional: bloquear la asignación y el equipo para consistencia
+                    await cur.execute(
+                        "SELECT estado FROM asignaciones WHERE id = %s FOR UPDATE",
+                        [id]
+                    )
+                    # Verificar nuevamente que sigue activa (evita cambios entre el find y ahora)
+                    row = await cur.fetchone()
+                    if not row or row["estado"] != "Activa":
+                        raise ValueError("La asignación ya no está activa.")
+
                     await cur.execute(
                         "UPDATE asignaciones SET estado = 'Devuelta', fecha_devolucion = %s WHERE id = %s",
-                        [fecha_devolucion, id],
+                        [fecha_devolucion, id]
                     )
                     await cur.execute(
                         "UPDATE equipos SET estado = 'Disponible' WHERE id = %s",
-                        [asignacion["equipo_id"]],
+                        [equipo_id]
                     )
-                    await conn.commit()
-                except Exception:
-                    await conn.rollback()
-                    raise
-                finally:
-                    conn.autocommit = True
         return await AsignacionModel.find_by_id(id)
 
     @staticmethod
     async def update(id: str, data: dict) -> dict | None:
+        """Actualiza campos permitidos de una asignación. No usa transacciones largas."""
         allowed = [
             "observaciones",
             "accesorios_entregados",
@@ -930,7 +923,8 @@ class AsignacionModel:
             "hoja_vida_pdf",
             "fecha_devolucion",
         ]
-        fields, values = [], []
+        fields = []
+        values = []
         for key in allowed:
             if key in data:
                 fields.append(f"{key} = %s")
@@ -946,46 +940,10 @@ class AsignacionModel:
         pool = await get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                try:
-                    await cur.execute(
-                        f"UPDATE asignaciones SET {', '.join(fields)} WHERE id = %s", values
-                    )
-                except Exception as e:
-                    err_str = str(e)
-                    # Si la columna no existe en la tabla (migración no aplicada), intentar reintentar
-                    # excluyendo las columnas opcionales que faltan.
-                    if "Unknown column" in err_str:
-                        missing_cols = []
-                        for col in ("usuarios_ids", "accesorios_entregados"):
-                            if col in err_str:
-                                missing_cols.append(col)
-
-                        # Si no detectamos columnas específicas, intentar quitar las opcionales presentes en `data`
-                        if not missing_cols:
-                            missing_cols = [c for c in ("usuarios_ids", "accesorios_entregados") if c in data]
-
-                        # Reconstruir campos/valores sin las columnas faltantes
-                        new_fields = []
-                        new_values = []
-                        for key in allowed:
-                            if key in data and key not in missing_cols:
-                                new_fields.append(f"{key} = %s")
-                                if key in ("accesorios_entregados", "usuarios_ids") and isinstance(data[key], list):
-                                    new_values.append(json.dumps(data[key], ensure_ascii=False))
-                                else:
-                                    new_values.append(data[key])
-
-                        if not new_fields:
-                            # Nada que actualizar después de quitar columnas faltantes
-                            return await AsignacionModel.find_by_id(id)
-
-                        new_values.append(id)
-                        await cur.execute(
-                            f"UPDATE asignaciones SET {', '.join(new_fields)} WHERE id = %s",
-                            new_values,
-                        )
-                    else:
-                        raise
+                # No necesitamos transacción explícita para una sola actualización
+                await cur.execute(
+                    f"UPDATE asignaciones SET {', '.join(fields)} WHERE id = %s", values
+                )
         return await AsignacionModel.find_by_id(id)
 
     @staticmethod
@@ -1717,81 +1675,59 @@ class SuministroModel:
 </file>
 
 <file path="backend_py/models/susuario.py">
-import aiomysql
-from config.db import get_pool
+# routes/susuarios.py (versión corregida)
+
+import uuid
+from fastapi import APIRouter, Depends, HTTPException
+from passlib.context import CryptContext
+from models.susuario import create_usuario_sistema
+from routes.auth import require_admin
+
+router = APIRouter()
+pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 
-async def create_usuario_sistema(data: dict):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """CREATE TABLE IF NOT EXISTS usuarios_sistema (
-                    id           VARCHAR(36)  NOT NULL PRIMARY KEY,
-                    username     VARCHAR(100) NOT NULL UNIQUE,
-                    password_hash VARCHAR(255) NOT NULL,
-                    rol          ENUM('admin','gestor') NOT NULL DEFAULT 'gestor',
-                    nombre       VARCHAR(150),
-                    email        VARCHAR(150),
-                    usuario_id   VARCHAR(36),
-                    activo       TINYINT(1) NOT NULL DEFAULT 1,
-                    ultimo_acceso TIMESTAMP NULL,
-                    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"""
-            )
-            await cur.execute(
-                """INSERT INTO usuarios_sistema (id, username, password_hash, rol, nombre, email, usuario_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                [
-                    data["id"],
-                    data["username"],
-                    data["password_hash"],
-                    data.get("rol", "gestor"),
-                    data.get("nombre"),
-                    data.get("email"),
-                    data.get("usuario_id"),
-                ],
-            )
+@router.post("", status_code=201, dependencies=[Depends(require_admin)])
+async def crear(body: dict, current_admin: dict = Depends(require_admin)):
+    """
+    Crea un nuevo usuario del sistema. Solo accesible por administradores.
+    """
+    username = body.get("username")
+    password = body.get("password")
 
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="username y password son requeridos.")
 
-async def get_by_username(username: str) -> dict | None:
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as cur:
-            await cur.execute(
-                """SELECT id, username, password_hash, rol, nombre, email, activo
-                   FROM usuarios_sistema
-                   WHERE username = %s
-                   LIMIT 1""",
-                [username],
-            )
-            row = await cur.fetchone()
-            if row is None:
-                return None
-            # Asegura que los campos de texto sean str, no bytes
-            return {
-                k: (v.decode("utf-8") if isinstance(v, (bytes, bytearray)) else v)
-                for k, v in row.items()
+    # Validar que el rol solicitado sea válido (admin/gestor) y no permitir escalada
+    rol_solicitado = body.get("rol", "gestor")
+    if rol_solicitado not in ("admin", "gestor"):
+        raise HTTPException(status_code=400, detail="Rol inválido. Debe ser 'admin' o 'gestor'.")
+
+    try:
+        hashed = pwd_context.hash(password)
+        new_id = str(uuid.uuid4())
+        await create_usuario_sistema(
+            {
+                "id": new_id,
+                "username": username,
+                "password_hash": hashed,
+                "rol": rol_solicitado,
+                "nombre": body.get("nombre"),
+                "email": body.get("email"),
+                "usuario_id": body.get("usuario_id"),
             }
-
-
-async def update_ultimo_acceso(user_id: str):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "UPDATE usuarios_sistema SET ultimo_acceso = NOW() WHERE id = %s",
-                [user_id],
-            )
-
-
-async def count_usuarios_sistema() -> int:
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute("SELECT COUNT(*) FROM usuarios_sistema")
-            row = await cur.fetchone()
-            return row[0] if row else 0
+        )
+        return {
+            "id": new_id,
+            "username": username,
+            "rol": rol_solicitado,
+            "nombre": body.get("nombre"),
+            "email": body.get("email"),
+        }
+    except Exception as e:
+        if "Duplicate entry" in str(e) or "1062" in str(e):
+            raise HTTPException(status_code=409, detail="Ya existe un usuario con ese username.")
+        raise HTTPException(status_code=500, detail=str(e))
 </file>
 
 <file path="backend_py/models/usuario.py">
@@ -2150,10 +2086,28 @@ from utils.acta_entrega_pdf import generar_acta_entrega_pdf
 from utils.files import safe_filename
 from utils.serializer import serialize
 
+from config.db import get_pool
+
+
 router = APIRouter()
 
 UPLOADS_DIR = os.getenv("UPLOADS_DIR", "uploads")
 ACCESORIOS_OPCIONES = ["Cargador", "Mouse", "Teclado", "Monitor"]
+
+
+# ─── Helper: cambiar estado de equipos adicionales (accesorios) ─────────────
+async def _cambiar_estado_accesorios(accesorios_ids: list[str], nuevo_estado: str):
+    """Cambia el estado de una lista de equipos (accesorios) al valor dado."""
+    if not accesorios_ids:
+        return
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            for eq_id in accesorios_ids:
+                await cur.execute(
+                    "UPDATE equipos SET estado = %s WHERE id = %s",
+                    (nuevo_estado, eq_id)
+                )
 
 
 async def _generar_y_registrar_acta(
@@ -2161,18 +2115,42 @@ async def _generar_y_registrar_acta(
     *,
     accesorios_entregados: list[str],
     cargado_por: str,
-    rellenar: bool = True,
+    regenerar: bool = False,
 ) -> tuple[bytes, str, str]:
-    # Si no queremos rellenar la plantilla, devolvemos los bytes crudos de la plantilla (si existe)
-    tpl_paths = [
-        Path('Doc') / 'Julian Castro Sena Acta.pdf',
-    ]
+    """
+    Genera o recupera el Acta de Entrega en PDF.
+    Si regenerar es False y ya existe un acta en la BD, devuelve la existente.
+    Si regenerar es True, fuerza la regeneración y actualiza versión.
+    """
+    # Verificar si ya existe un acta asociada
+    existing_docs = await DocumentoModel.find_all(tipo="Acta", asignacion_id=asignacion["id"])
+    if not regenerar and existing_docs:
+        # Usar el primer documento existente
+        doc = existing_docs[0]
+        # Recuperar el contenido desde el BLOB o desde disco
+        archivo = await DocumentoModel.get_archivo(doc["id"])
+        if archivo and archivo.get("contenido"):
+            pdf_bytes = archivo["contenido"]
+            filename = safe_filename(archivo.get("filename") or "acta.pdf", default="acta.pdf")
+            file_url = doc.get("url") or f"/uploads/{filename}"
+            return pdf_bytes, filename, file_url
+        # Fallback: si no hay BLOB, intentar desde disco
+        if doc.get("url") and doc["url"].startswith("/uploads/"):
+            file_path = os.path.join(UPLOADS_DIR, Path(doc["url"]).name)
+            if os.path.exists(file_path):
+                with open(file_path, "rb") as f:
+                    pdf_bytes = f.read()
+                filename = Path(file_path).name
+                file_url = doc["url"]
+                return pdf_bytes, filename, file_url
+
+    # Si llegamos aquí, hay que regenerar el PDF
+    tpl_paths = [Path('Doc') / 'Julian Castro Sena Acta.pdf']
     pdf_bytes = None
-    if not rellenar:
-        for p in tpl_paths:
-            if p.exists():
-                pdf_bytes = p.read_bytes()
-                break
+    for p in tpl_paths:
+        if p.exists():
+            pdf_bytes = p.read_bytes()
+            break
     if pdf_bytes is None:
         pdf_bytes = generar_acta_entrega_pdf(
             dict(asignacion),
@@ -2181,7 +2159,7 @@ async def _generar_y_registrar_acta(
             entregado_por=cargado_por,
         )
 
-    # Guardar en disco (fallback)
+    # Guardar en disco
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     placa = asignacion.get("placa") or "equipo"
     filename = safe_filename(
@@ -2191,50 +2169,37 @@ async def _generar_y_registrar_acta(
     filepath = os.path.join(UPLOADS_DIR, filename)
     with open(filepath, "wb") as f:
         f.write(pdf_bytes)
-
     file_url = f"/uploads/{filename}"
 
-    # Registrar/actualizar en documentos
-    existing = await DocumentoModel.find_all(tipo="Acta", asignacion_id=asignacion["id"])
-    if not existing:
+    # Registrar o actualizar documento
+    if not existing_docs:
         doc = await DocumentoModel.create({
-            "nombre":      f"Acta entrega {placa}",
-            "tipo":        "Acta",
-            "equipo_id":   asignacion.get("equipo_id"),
+            "nombre": f"Acta entrega {placa}",
+            "tipo": "Acta",
+            "equipo_id": asignacion.get("equipo_id"),
             "asignacion_id": asignacion.get("id"),
-            "usuario_id":  asignacion.get("usuario_id"),
-            "url":         file_url,
+            "usuario_id": asignacion.get("usuario_id"),
+            "url": file_url,
             "fecha_carga": date.today().isoformat(),
             "cargado_por": cargado_por,
-            "version":     1,
+            "version": 1,
         })
         if doc:
-            await DocumentoModel.upsert_archivo(
-                doc["id"],
-                filename=filename,
-                mime_type="application/pdf",
-                contenido=pdf_bytes,
-            )
+            await DocumentoModel.upsert_archivo(doc["id"], filename=filename, mime_type="application/pdf", contenido=pdf_bytes)
     else:
-        doc = await DocumentoModel.update(existing[0]["id"], {
-            "url":        file_url,
+        # Actualizar versión solo si regeneramos
+        nueva_version = (existing_docs[0].get("version") or 1) + 1
+        doc = await DocumentoModel.update(existing_docs[0]["id"], {
+            "url": file_url,
             "fecha_carga": date.today().isoformat(),
             "cargado_por": cargado_por,
-            "version":    (existing[0].get("version") or 1) + 1,
+            "version": nueva_version,
         })
         if doc:
-            await DocumentoModel.upsert_archivo(
-                doc["id"],
-                filename=filename,
-                mime_type="application/pdf",
-                contenido=pdf_bytes,
-            )
+            await DocumentoModel.upsert_archivo(doc["id"], filename=filename, mime_type="application/pdf", contenido=pdf_bytes)
 
-    # Persistir URL en asignaciones (si aplica)
-    try:
-        await AsignacionModel.update(asignacion["id"], {"acta_pdf": file_url})
-    except Exception:
-        pass
+    # Actualizar URL en asignaciones
+    await AsignacionModel.update(asignacion["id"], {"acta_pdf": file_url})
 
     return pdf_bytes, filename, file_url
 
@@ -2269,43 +2234,61 @@ async def create(body: dict, current_user: dict = Depends(get_current_user)):
             status_code=400,
             detail=f"Faltan campos obligatorios: {', '.join(missing)}.",
         )
+
+    nueva = None
     try:
-        # Debug: log de datos recibidos
-        print(f"[ASIGNACIONES POST] Body recibido: {body}")
-        print(f"[ASIGNACIONES POST] Accesorios en body: {body.get('accesorios_entregados')}")
-        
+        # Crear asignación (ya maneja transacción y bloqueo)
         nueva = await AsignacionModel.create(body)
 
+        # Obtener IDs de los accesorios adicionales (equipos) para cambiar su estado
+        accesorios_raw = body.get("accesorios_entregados", [])
+        accesorios_ids = []
+        for acc in accesorios_raw:
+            if isinstance(acc, dict) and acc.get("id"):
+                accesorios_ids.append(acc["id"])
+            elif isinstance(acc, str):
+                # Si es solo texto, no podemos cambiar estado; se ignora
+                pass
+        if accesorios_ids:
+            await _cambiar_estado_accesorios(accesorios_ids, "Asignado")
+
         cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
-        accesorios = normalizar_accesorios_entregados(body.get("accesorios_entregados"))
-        print(f"[ASIGNACIONES POST] Accesorios normalizados: {accesorios}")
+        accesorios_textos = normalizar_accesorios_entregados(body.get("accesorios_entregados"))
 
-        # Intentar generar acta automáticamente (guardar plantilla rellenada con datos)
+        # Generar acta (si falla, se registra pero no se detiene la creación)
+        acta_error = None
         try:
-            await _generar_y_registrar_acta(nueva, accesorios_entregados=accesorios, cargado_por=cargado_por, rellenar=True)
-        except Exception:
-            pass
+            await _generar_y_registrar_acta(nueva, accesorios_entregados=accesorios_textos, cargado_por=cargado_por, regenerar=False)
+        except Exception as e:
+            acta_error = str(e)
+            # Registrar en log (aquí solo print, idealmente logging)
+            print(f"[ERROR] Falló generación de acta para asignación {nueva['id']}: {acta_error}")
 
-        # Generar hoja de vida solo si el usuario lo pidio explicitamente.
+        # Generar hoja de vida si solicitado
         if body.get("generar_hoja_vida") is True:
             try:
                 equipo = await EquipoModel.find_by_id(nueva.get("equipo_id"))
                 if equipo and _requiere_hoja_vida(equipo, True):
                     await _generar_y_registrar_hoja_vida(equipo)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[ERROR] Falló generación de hoja de vida para equipo {nueva.get('equipo_id')}: {e}")
 
-        # Intentar enlazar Hoja de Vida (si existe) en la asignación
+        # Enlazar hoja de vida existente si la hay
         try:
             hv = await DocumentoModel.find_all(tipo="Hoja de vida", equipo_id=nueva.get("equipo_id"))
             if hv:
                 await AsignacionModel.update(nueva["id"], {"hoja_vida_pdf": hv[0].get("url")})
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[ERROR] Falló enlace de hoja de vida: {e}")
 
-        # Releer para devolver con URLs actualizadas
+        # Releer asignación actualizada
         nueva = await AsignacionModel.find_by_id(nueva["id"])
-        return serialize({"data": nueva, "message": "Asignación creada exitosamente."})
+
+        response_data = {"data": nueva, "message": "Asignación creada exitosamente."}
+        if acta_error:
+            response_data["warning"] = f"Acta generada con error: {acta_error}"
+        return serialize(response_data)
+
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
@@ -2313,8 +2296,12 @@ async def create(body: dict, current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/{id}/acta-pdf")
-async def get_acta_pdf(id: str, force: bool = Query(False), current_user: dict = Depends(get_current_user)):
-    """Genera (o regenera) el Acta de Entrega en PDF, la almacena y la devuelve como descarga."""
+async def get_acta_pdf(
+    id: str,
+    force: bool = Query(False),
+    current_user: dict = Depends(get_current_user),
+):
+    """Devuelve el Acta de Entrega en PDF. Si force=false, devuelve la existente; si force=true, regenera."""
     asignacion = await AsignacionModel.find_by_id(id)
     if not asignacion:
         raise HTTPException(status_code=404, detail="Asignación no encontrada.")
@@ -2322,11 +2309,15 @@ async def get_acta_pdf(id: str, force: bool = Query(False), current_user: dict =
     cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
     accesorios = normalizar_accesorios_entregados(asignacion.get("accesorios_entregados"))
 
-    pdf_bytes, filename, _url = await _generar_y_registrar_acta(
-        asignacion,
-        accesorios_entregados=accesorios,
-        cargado_por=cargado_por,
-    )
+    try:
+        pdf_bytes, filename, _ = await _generar_y_registrar_acta(
+            asignacion,
+            accesorios_entregados=accesorios,
+            cargado_por=cargado_por,
+            regenerar=force,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al generar el acta: {str(e)}")
 
     return Response(
         content=pdf_bytes,
@@ -2335,7 +2326,7 @@ async def get_acta_pdf(id: str, force: bool = Query(False), current_user: dict =
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
-            "X-Acta-Generated": "true",
+            "X-Acta-Generated": "true" if force else "false",
             "X-Acta-Length": str(len(pdf_bytes)),
         },
     )
@@ -2344,8 +2335,24 @@ async def get_acta_pdf(id: str, force: bool = Query(False), current_user: dict =
 @router.post("/{id}/devolucion")
 async def registrar_devolucion(id: str):
     try:
+        # Primero obtener la asignación para saber qué accesorios tiene
+        asignacion = await AsignacionModel.find_by_id(id)
+        if not asignacion:
+            raise HTTPException(status_code=404, detail="Asignación no encontrada.")
+
+        # Extraer IDs de accesorios asignados (que son equipos cuyo estado cambiamos antes)
+        accesorios_ids = []
+        accesorios_raw = asignacion.get("accesorios_entregados", [])
+        for acc in accesorios_raw:
+            if isinstance(acc, dict) and acc.get("id"):
+                accesorios_ids.append(acc["id"])
+        if accesorios_ids:
+            await _cambiar_estado_accesorios(accesorios_ids, "Disponible")
+
+        # Registrar devolución (actualiza estado de asignación y equipo principal)
         actualizada = await AsignacionModel.registrar_devolucion(id)
-        return serialize({"data": actualizada, "message": "Devolución registrada. Equipo marcado como Disponible."})
+
+        return serialize({"data": actualizada, "message": "Devolución registrada. Equipo y accesorios marcados como Disponibles."})
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -2356,36 +2363,16 @@ async def registrar_devolucion(id: str):
 async def update(id: str, body: dict, current_user: dict = Depends(get_current_user)):
     """Actualiza una asignación existente (usuarios_ids, accesorios, observaciones, etc.)"""
     try:
-        print(f"[ASIGNACIONES PUT] Iniciando actualización de {id}")
-        print(f"[ASIGNACIONES PUT] Body recibido: {body}")
-        
         asignacion = await AsignacionModel.find_by_id(id)
         if not asignacion:
-            print(f"[ASIGNACIONES PUT] ERROR: Asignación no encontrada")
             raise HTTPException(status_code=404, detail="Asignación no encontrada.")
-        
-        print(f"[ASIGNACIONES PUT] Asignación encontrada, procediendo a actualizar...")
-        
-        # Actualizar en BD (sin regenerar acta por ahora)
-        try:
-            actualizada = await AsignacionModel.update(id, body)
-            print(f"[ASIGNACIONES PUT] [OK] Asignación actualizada en BD")
-            print(f"[ASIGNACIONES PUT] Resultado actualizado: {actualizada}")
-        except Exception as e:
-            print(f"[ASIGNACIONES PUT] ERROR en update: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise
-        
-        print(f"[ASIGNACIONES PUT] [OK] Retornando resultado")
+
+        # Actualizar en BD (sin regenerar acta automáticamente)
+        actualizada = await AsignacionModel.update(id, body)
         return serialize({"data": actualizada, "message": "Asignación actualizada exitosamente."})
-    
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[ASIGNACIONES PUT] ERROR CRÍTICO: {str(e)}")
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 </file>
 
@@ -2410,10 +2397,17 @@ router = APIRouter()
 security = HTTPBearer()
 pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt_sha256", "bcrypt"], deprecated="auto")
 
-JWT_SECRET = os.getenv("JWT_SECRET", "changeme_in_production_please_use_env")
+# ─── FORZAR JWT_SECRET desde entorno (sin valor por defecto inseguro) ───
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError(
+        "JWT_SECRET no está definido en el entorno. "
+        "El sistema no puede arrancar de forma segura. "
+        "Asigna un valor (ej: openssl rand -hex 32) y reinicia."
+    )
+
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
-
 
 # ─── Helpers ──────────────────────────────────────────────
 
@@ -2446,33 +2440,51 @@ async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(securit
 async def login(body: dict):
     """
     Recibe { username, password } y retorna un JWT Bearer token.
+    Mensajes de error unificados para evitar enumeración de usuarios.
     """
     username = (body.get("username") or "").strip()
     password = body.get("password") or ""
 
     if not username or not password:
-        raise HTTPException(status_code=400, detail="username y password son requeridos.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="username y password son requeridos."
+        )
 
     user = await get_by_username(username)
 
+    # Si el usuario no existe, respondemos igual que si la contraseña fuera incorrecta
     if not user:
-        raise HTTPException(status_code=401, detail="Credenciales incorrectas.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas."
+        )
 
+    # Verificar estado activo (pero sin diferenciar en el mensaje)
+    # Si está inactivo, también respondemos "credenciales incorrectas"
     if not user.get("activo"):
-        raise HTTPException(status_code=403, detail="Usuario inactivo. Contacta al administrador.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas."
+        )
 
     try:
         verified = pwd_context.verify(password, user["password_hash"])
     except ValueError as e:
         msg = str(e)
+        # Manejo del límite de 72 bytes en bcrypt
         if "72" in msg or "truncate" in msg or "longer than" in msg:
             verified = pwd_context.verify(password[:72], user["password_hash"])
         else:
             raise
 
     if not verified:
-        raise HTTPException(status_code=401, detail="Credenciales incorrectas.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas."
+        )
 
+    # Actualizar último acceso
     await update_ultimo_acceso(user["id"])
 
     token = _create_token({
@@ -2501,23 +2513,41 @@ async def me(current_user: dict = Depends(get_current_user)):
     return {"user": current_user}
 
 
-@router.post("/setup", status_code=201)
+@router.post("/setup", status_code=status.HTTP_201_CREATED)
 async def setup_admin(body: dict):
     """
     Crea el primer usuario admin si la tabla está vacía.
     Solo funciona cuando NO existe ningún usuario del sistema.
+    Ahora exige una contraseña segura (mínimo 8 caracteres) en lugar de usar
+    una por defecto. Esto evita credenciales conocidas en instalaciones nuevas.
     """
     total = await count_usuarios_sistema()
     if total > 0:
         raise HTTPException(
-            status_code=409,
-            detail="Ya existen usuarios en el sistema. Usa la sección de Administración para crear más.",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ya existen usuarios en el sistema. Usa la sección de Administración para crear más."
         )
 
-    username = (body.get("username") or "admin").strip()
-    password = body.get("password") or "admin123"
+    username = (body.get("username") or "").strip()
+    password = body.get("password", "").strip()
     nombre = body.get("nombre") or "Administrador"
     email = body.get("email") or "admin@empresa.com"
+
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El nombre de usuario es requerido."
+        )
+    if not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debes proporcionar una contraseña para el usuario administrador."
+        )
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña debe tener al menos 8 caracteres."
+        )
 
     try:
         hashed = pwd_context.hash(password)
@@ -2527,6 +2557,7 @@ async def setup_admin(body: dict):
             hashed = pwd_context.hash(password[:72])
         else:
             raise
+
     await create_usuario_sistema({
         "id": str(uuid.uuid4()),
         "username": username,
@@ -2697,9 +2728,10 @@ async def get_stats():
 
 <file path="backend_py/routes/documentos.py">
 import os
+import uuid
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form, status
+from fastapi.responses import Response
 from models.documento import DocumentoModel
 from utils.serializer import serialize
 from utils.files import safe_filename
@@ -2707,6 +2739,33 @@ from utils.files import safe_filename
 router = APIRouter()
 
 UPLOADS_DIR = os.getenv("UPLOADS_DIR", "uploads")
+# Crear directorio por compatibilidad, aunque ya no guardamos archivos en disco
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+# Configuración de seguridad
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",        # .xlsx
+    "image/png",
+    "image/jpeg",
+    "text/plain",
+}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+def _validate_file(content_type: str, size: int) -> None:
+    """Lanza excepción si el tipo MIME o tamaño no son permitidos."""
+    if content_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Tipo de archivo no permitido. Permitidos: {', '.join(ALLOWED_MIME_TYPES)}"
+        )
+    if size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"El archivo excede el tamaño máximo de {MAX_FILE_SIZE // (1024*1024)} MB"
+        )
 
 
 @router.get("")
@@ -2737,80 +2796,66 @@ async def get_by_id(id: str):
 
 @router.get("/{id}/download")
 async def download(id: str):
-    """Descarga segura de documentos: primero intenta BD (BLOB), luego fallback a /uploads."""
+    """Descarga segura de documentos desde el BLOB (única fuente de verdad)."""
     doc = await DocumentoModel.find_by_id(id)
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado.")
 
     archivo = await DocumentoModel.get_archivo(id)
-    if archivo and archivo.get("contenido"):
-        filename = safe_filename(archivo.get("filename") or "documento", default="documento")
-        return Response(
-            content=archivo["contenido"],
-            media_type=archivo.get("mime_type") or "application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+    if not archivo or not archivo.get("contenido"):
+        raise HTTPException(status_code=404, detail="Archivo no disponible para descarga.")
 
-    # Fallback: si el documento apunta a /uploads/.., intentamos leerlo del disco.
-    url = (doc.get("url") or "").strip()
-    if url.startswith("/uploads/"):
-        filename = Path(url).name
-        file_path = os.path.join(UPLOADS_DIR, filename)
-        if os.path.exists(file_path):
-            with open(file_path, "rb") as f:
-                content = f.read()
-            safe_name = safe_filename(filename, default="documento")
-            media_type = "application/pdf" if safe_name.lower().endswith(".pdf") else "application/octet-stream"
-            return Response(
-                content=content,
-                media_type=media_type,
-                headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
-            )
-
-    raise HTTPException(status_code=404, detail="Archivo no disponible para descarga.")
+    filename = safe_filename(archivo.get("filename") or "documento", default="documento")
+    return Response(
+        content=archivo["contenido"],
+        media_type=archivo.get("mime_type") or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create(
     nombre: str = Form(...),
     tipo: str = Form(...),
     equipo_id: str = Form(None),
     asignacion_id: str = Form(None),
     usuario_id: str = Form(None),
-    url: str = Form(None),
+    url: str = Form(None),   # Se ignora si se sube archivo
     version: int = Form(1),
     cargado_por: str = Form(None),
-    file: UploadFile = File(None),
+    archivo: UploadFile = File(...),  # Campo obligatorio
 ):
-    final_url = url
-    if file:
-        os.makedirs(UPLOADS_DIR, exist_ok=True)
-        safe_name = safe_filename(file.filename, default="documento")
-        file_path = os.path.join(UPLOADS_DIR, safe_name)
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        final_url = f"/uploads/{safe_name}"
+    # Validar archivo
+    content = await archivo.read()
+    await archivo.close()
+    _validate_file(archivo.content_type or "application/octet-stream", len(content))
 
-    if not final_url:
-        raise HTTPException(status_code=400, detail="Se requiere una URL o un archivo adjunto.")
+    # Generar nombre único para el almacenamiento interno
+    original_filename = archivo.filename or "documento"
+    unique_filename = f"{uuid.uuid4().hex}_{safe_filename(original_filename, default='documento')}"
 
-    try:
-        nuevo = await DocumentoModel.create(
-            {
-                "nombre": nombre,
-                "tipo": tipo,
-                "equipo_id": equipo_id,
-                "asignacion_id": asignacion_id,
-                "usuario_id": usuario_id,
-                "url": final_url,
-                "version": version,
-                "cargado_por": cargado_por,
-            }
+    # Crear documento en BD (url queda como marcador, no se usará para servir)
+    nuevo = await DocumentoModel.create({
+        "nombre": nombre,
+        "tipo": tipo,
+        "equipo_id": equipo_id,
+        "asignacion_id": asignacion_id,
+        "usuario_id": usuario_id,
+        "url": f"blob://{unique_filename}",  # solo referencia
+        "version": version,
+        "cargado_por": cargado_por,
+    })
+
+    if nuevo:
+        # Guardar contenido en tabla de blobs
+        await DocumentoModel.upsert_archivo(
+            nuevo["id"],
+            filename=original_filename,
+            mime_type=archivo.content_type or "application/octet-stream",
+            contenido=content,
         )
-        return serialize({"data": nuevo, "message": "Documento registrado exitosamente."})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+    return serialize({"data": nuevo, "message": "Documento registrado exitosamente."})
 
 
 @router.put("/{id}")
@@ -2824,7 +2869,7 @@ async def update(
     url: str = Form(None),
     version: int = Form(None),
     cargado_por: str = Form(None),
-    file: UploadFile = File(None),
+    archivo: UploadFile = File(None),  # opcional
 ):
     existe = await DocumentoModel.find_by_id(id)
     if not existe:
@@ -2839,20 +2884,31 @@ async def update(
         if val is not None:
             data[key] = val
 
-    if file:
-        os.makedirs(UPLOADS_DIR, exist_ok=True)
-        safe_name = safe_filename(file.filename, default="documento")
-        file_path = os.path.join(UPLOADS_DIR, safe_name)
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        data["url"] = f"/uploads/{safe_name}"
+    # Si se envía un nuevo archivo, validar y actualizar BLOB
+    if archivo:
+        content = await archivo.read()
+        await archivo.close()
+        _validate_file(archivo.content_type or "application/octet-stream", len(content))
 
-    try:
+        original_filename = archivo.filename or "documento"
+        unique_filename = f"{uuid.uuid4().hex}_{safe_filename(original_filename, default='documento')}"
+        data["url"] = f"blob://{unique_filename}"  # actualizar referencia
+
+        # Actualizar primero los metadatos
         actualizado = await DocumentoModel.update(id, data)
-        return serialize({"data": actualizado, "message": "Documento actualizado."})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        if actualizado:
+            # Guardar nuevo contenido en blobs (sobrescribe)
+            await DocumentoModel.upsert_archivo(
+                id,
+                filename=original_filename,
+                mime_type=archivo.content_type or "application/octet-stream",
+                contenido=content,
+            )
+        return serialize({"data": actualizado, "message": "Documento actualizado con nuevo archivo."})
+
+    # Sin archivo nuevo: solo actualizar metadatos
+    actualizado = await DocumentoModel.update(id, data)
+    return serialize({"data": actualizado, "message": "Documento actualizado."})
 
 
 @router.delete("/{id}")
@@ -3159,10 +3215,7 @@ def _parse_csv(content: bytes) -> list[dict]:
 
 
 def _parse_xlsx(content: bytes) -> list[dict]:
-    """Parsea un .xlsx en memoria y devuelve lista de dicts (cabeceras tal cual).
-
-    Usa openpyxl para leer la primera hoja y construir filas. Devuelve [] si no hay datos.
-    """
+    """Parsea un .xlsx en memoria y devuelve lista de dicts (cabeceras tal cual)."""
     try:
         from openpyxl import load_workbook
     except Exception as e:
@@ -3174,7 +3227,6 @@ def _parse_xlsx(content: bytes) -> list[dict]:
     if not rows:
         return []
 
-    # Intentar detectar la fila de cabecera (no siempre es la primera fila en plantillas de Excel)
     header_idx = None
     tokens = ('placa', 'serial', 'usuario', 'tipo', 'marca', 'modelo', 'referencia')
     for i, row in enumerate(rows[:20]):
@@ -3201,18 +3253,16 @@ def _parse_xlsx(content: bytes) -> list[dict]:
 
 
 def _s(v) -> str:
-    """Convierte cualquier valor de celda a str limpio (evita 'bool has no .strip')."""
+    """Convierte cualquier valor de celda a str limpio."""
     if v is None:
         return ""
     return str(v).strip()
 
 
 def _normalize_header(h: str) -> str:
-    # Normaliza cabeceras: trim, lowercase, espacios -> guion_bajo, elimina caracteres no alfanuméricos
     if h is None:
         return ""
     s = h.strip().lower()
-    # Quita tildes/diacríticos: "Área" -> "Area"
     s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
     s = re.sub(r"\s+", "_", s)
     s = re.sub(r"[^a-z0-9_]+", "", s)
@@ -3220,9 +3270,7 @@ def _normalize_header(h: str) -> str:
 
 
 async def _insert_equipo(row: dict) -> dict | None:
-    # Normalizar booleano
     row["es_rentado"] = _s(row.get("es_rentado", "0")).lower() in ("1", "true", "si", "sí")
-    # Limpiar vacíos → None (convierte todo a str primero)
     data = {k: (_s(v) if _s(v) != "" else None) for k, v in row.items()}
     data["es_rentado"] = row["es_rentado"]
     return await EquipoModel.create(data)
@@ -3277,7 +3325,6 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
     if not content:
         raise HTTPException(status_code=400, detail="El archivo está vacío.")
 
-    # Soportar CSV y Excel (.xlsx)
     filas = []
     try:
         if filename.endswith(".csv"):
@@ -3297,7 +3344,6 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
     if not filas:
         raise HTTPException(status_code=422, detail="El CSV no contiene filas de datos.")
 
-    # Normalizar cabeceras y crear filas con keys normalizadas; convertir todos los valores a str
     try:
         filas_normalizadas = []
         for f in filas:
@@ -3306,14 +3352,9 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Error al normalizar cabeceras: {e}")
 
-    # Intentar mapear columnas comunes a nombres canónicos cuando el archivo
-    # usa cabeceras distintas (por ejemplo: 'PLACA COMPUTADORES' -> 'placa')
-    # Esto ayuda a aceptar plantillas de Excel que no coinciden exactamente.
     mapping = {}
     if filas_normalizadas:
         headers_norm = list(filas_normalizadas[0].keys())
-        # Mapas de alias sencillos: si la cabecera contiene alguno de estos tokens
-        # la usamos como fuente para la columna canónica.
         ALIASES = {
             'placa': ['placa', 'codigo', 'codigo_activo'],
             'serial': ['serial', 'sn', 'numero_serial'],
@@ -3339,19 +3380,16 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
                 if canon in mapping:
                     break
 
-        # Aplicar mapping a cada fila (añadir la clave canónica si falta)
         if mapping:
             for row in filas_normalizadas:
                 for canon, src in mapping.items():
                     if canon not in row or not row.get(canon):
                         row[canon] = row.get(src, '')
 
-    # Validar que existan las columnas requeridas (usando cabeceras normalizadas)
     columnas_csv = set(filas_normalizadas[0].keys())
     faltantes = [c for c in REQUIRED[entidad] if c not in columnas_csv]
     if faltantes:
         if dry_run:
-            # En dry_run devolvemos una vista previa y las columnas faltantes
             sample = filas_normalizadas[:20]
             return {
                 "total": len(filas_normalizadas),
@@ -3369,7 +3407,6 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
     insertados = 0
     errores: list[dict] = []
 
-    # Si es dry_run ya devolvimos faltantes; si dry_run sin faltantes devolvemos preview
     if dry_run:
         sample = filas_normalizadas[:20]
         return {
@@ -3379,11 +3416,9 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
             "missing_columns": [],
         }
 
-    for idx, fila in enumerate(filas_normalizadas, start=2):   # start=2 porque fila 1 es cabecera
-        # Ignorar filas completamente vacías
+    for idx, fila in enumerate(filas_normalizadas, start=2):
         if all(_s(v) == "" for v in fila.values()):
             continue
-        # Validar campos requeridos
         vacios = [c for c in REQUIRED[entidad] if not str(fila.get(c, "")).strip()]
         if vacios:
             errores.append({
@@ -3399,13 +3434,11 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
             # Auto-attach: si estamos importando equipos, buscar PDFs en Doc/ y registrar
             if entidad == 'equipos' and created:
                 try:
-                    # buscar archivo en Doc por nombre exacto o por placa/usuario
                     doc_dir = Path(__file__).resolve().parents[2] / 'Doc'
                     placa = (fila.get('placa') or '').strip()
                     usuario = (fila.get('usuario_nombre') or fila.get('nombre') or '').strip()
 
                     def find_match():
-                        # 1) valores en la fila que parecen nombres de archivo
                         for v in fila.values():
                             if not v:
                                 continue
@@ -3414,12 +3447,10 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
                                 p = doc_dir / s
                                 if p.exists():
                                     return p
-                        # 2) buscar por placa en nombres de archivos
                         if placa:
                             for p in doc_dir.rglob('*.pdf'):
                                 if placa.lower() in p.name.lower():
                                     return p
-                        # 3) buscar por usuario tokens
                         if usuario:
                             tokens = [t for t in re.split(r"\s+", usuario) if t]
                             for p in doc_dir.rglob('*.pdf'):
@@ -3430,20 +3461,21 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
 
                     match = find_match()
                     if match:
-                        content = match.read_bytes()
+                        file_content = match.read_bytes()
                         UPLOADS_DIR = os.getenv('UPLOADS_DIR', 'uploads')
                         os.makedirs(UPLOADS_DIR, exist_ok=True)
-                        # crear nombre único en uploads
                         base = safe_filename(match.stem, default='doc')
                         ext = match.suffix or '.pdf'
                         new_name = f"{base}_{uuid.uuid4().hex[:8]}{ext}"
                         dest = Path(UPLOADS_DIR) / new_name
-                        dest.write_bytes(content)
+                        dest.write_bytes(file_content)
 
-                        # registrar documento
+                        # ✅ CORREGIDO: tipo era 'acta_entrega' (no existe en el enum).
+                        #    Ahora es 'Acta', que sí aparece en filtros y métricas de
+                        #    "equipos sin acta".
                         nuevo = await DocumentoModel.create({
                             'nombre': match.name,
-                            'tipo': 'acta_entrega',
+                            'tipo': 'Acta',
                             'equipo_id': created.get('id'),
                             'asignacion_id': None,
                             'usuario_id': None,
@@ -3452,13 +3484,16 @@ async def importar_csv(entidad: str, archivo: UploadFile = File(...), dry_run: b
                             'cargado_por': None,
                         })
                         if nuevo:
-                            # guardar blob en documentos_archivos también
                             try:
-                                await DocumentoModel.upsert_archivo(nuevo['id'], filename=match.name, mime_type='application/pdf', contenido=content)
+                                await DocumentoModel.upsert_archivo(
+                                    nuevo['id'],
+                                    filename=match.name,
+                                    mime_type='application/pdf',
+                                    contenido=file_content,
+                                )
                             except Exception:
                                 pass
                 except Exception:
-                    # no bloquear la importación por fallo en adjuntar archivos
                     pass
 
         except Exception as e:
@@ -3488,11 +3523,9 @@ async def descargar_plantilla(entidad: str):
 
     headers_row = HEADERS[entidad]
     output = io.StringIO()
-    # Delimitador ';' suele abrirse en columnas correctamente en Excel (ES)
     writer = csv.writer(output, delimiter=";")
     writer.writerow(headers_row)
 
-    # Fila de ejemplo
     ejemplos: dict[str, list] = {
         "equipos": [
             "EAC000001", "SN123456", "Laptop", "Lenovo", "ThinkPad L14",
@@ -3991,7 +4024,11 @@ import sys
 sys.path.append(os.getcwd())
 
 from models.asignacion import AsignacionModel
-from routes.asignaciones import _normalize_accesorios, _generar_y_registrar_acta
+# ✅ CORREGIDO: antes importaba '_normalize_accesorios' que ya no existe.
+#    La función se renombró a 'normalizar_accesorios_entregados' y se movió
+#    a utils/accesorios.py
+from utils.accesorios import normalizar_accesorios_entregados
+from routes.asignaciones import _generar_y_registrar_acta
 
 
 async def main():
@@ -4005,7 +4042,8 @@ async def main():
         print('Asignación no encontrada:', asignacion_id)
         return
 
-    accesorios = _normalize_accesorios(asignacion.get('accesorios_entregados'))
+    # ✅ CORREGIDO: usar la función correcta del módulo correcto
+    accesorios = normalizar_accesorios_entregados(asignacion.get('accesorios_entregados'))
 
     try:
         pdf_bytes, filename, url = await _generar_y_registrar_acta(
@@ -5004,6 +5042,12 @@ def safe_filename(filename: str, *, default: str = "file", max_length: int = 180
 """
 Generador de "Hoja de Vida de Equipos" – formato F-TC-002 v5
 Usa reportlab para reproducir fielmente el diseño del formulario adjunto.
+
+✅ CORRECCIONES aplicadas:
+  - Numeración de secciones: antes saltaba de "2." a "4." — ahora es 1→2→3→4→5→6
+  - "OFFICE HOGAR Y EMPRESAS 2016" ya no está hardcodeado — se usa el campo
+    licenciamiento_office del equipo; si está vacío se muestra "N.A"
+  - Comentario del logo actualizado para que sea fácil de parametrizar
 """
 
 import io
@@ -5014,25 +5058,24 @@ from reportlab.lib import colors
 from reportlab.pdfgen.canvas import Canvas
 
 # ─── Paleta ─────────────────────────────────────────────────────────────────
-C_HEADER    = colors.HexColor("#1E3A5F")   # Azul oscuro cabecera
-C_SEC       = colors.HexColor("#D9E1F2")   # Azul claro sección
-C_LABEL     = colors.HexColor("#BDD7EE")   # Azul etiqueta
-C_ALT       = colors.HexColor("#F2F6FC")   # Fila alterna
+C_HEADER    = colors.HexColor("#1E3A5F")
+C_SEC       = colors.HexColor("#D9E1F2")
+C_LABEL     = colors.HexColor("#BDD7EE")
+C_ALT       = colors.HexColor("#F2F6FC")
 C_BORDER    = colors.HexColor("#8EA9C1")
 C_WHITE     = colors.white
 C_BLACK     = colors.black
-C_RED       = colors.HexColor("#CC0000")   # Texto PREVENTIVO/CORRECTIVO
+C_RED       = colors.HexColor("#CC0000")
 
 PW, PH = LETTER
-MX      = 18 * mm   # margen horizontal
-MY      = 18 * mm   # margen vertical
+MX      = 18 * mm
+MY      = 18 * mm
 USEW    = PW - 2 * MX
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
 def _rect(c: Canvas, x, y, w, h, *, fill=None, stroke=True):
-    """Dibuja un rectángulo con fondo y/o borde."""
     c.saveState()
     if fill:
         c.setFillColor(fill)
@@ -5046,7 +5089,6 @@ def _rect(c: Canvas, x, y, w, h, *, fill=None, stroke=True):
 
 def _text(c: Canvas, text: str, x, y, w, h, *,
           size=7, bold=False, color=C_BLACK, align="center"):
-    """Texto vertically-centrado dentro de una celda."""
     text = str(text or "")
     c.saveState()
     c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
@@ -5056,13 +5098,12 @@ def _text(c: Canvas, text: str, x, y, w, h, *,
         c.drawCentredString(x + w / 2, ty, _clip(text, c, w - 4, size))
     elif align == "right":
         c.drawRightString(x + w - 2, ty, _clip(text, c, w - 4, size))
-    else:  # left
+    else:
         c.drawString(x + 3, ty, _clip(text, c, w - 6, size))
     c.restoreState()
 
 
 def _clip(text: str, c: Canvas, max_w: float, size: float) -> str:
-    """Recorta el texto si supera max_w."""
     from reportlab.pdfbase.pdfmetrics import stringWidth
     while text and stringWidth(text, c._fontname, size) > max_w:
         text = text[:-2] + "…"
@@ -5070,7 +5111,6 @@ def _clip(text: str, c: Canvas, max_w: float, size: float) -> str:
 
 
 def _sec_header(c: Canvas, title: str, x, y, w, h=14) -> float:
-    """Encabezado de sección (fondo celeste, texto negrita centrado)."""
     _rect(c, x, y - h, w, h, fill=C_SEC)
     _text(c, title, x, y - h, w, h, bold=True, size=8)
     return y - h
@@ -5094,7 +5134,7 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     """
     Genera el PDF de Hoja de Vida y devuelve bytes.
 
-    :param equipo:    dict con todos los campos del equipo (incluye los de HV).
+    :param equipo:    dict con todos los campos del equipo.
     :param historial: lista de dicts con {usuario_nombre, cargo, area/ubicacion, fecha_asignacion}.
     """
     if historial is None:
@@ -5104,10 +5144,8 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     c = Canvas(buf, pagesize=LETTER)
 
     x0 = MX
-    # reportlab: y=0 es la base de la página → empezamos desde arriba
-    y = PH - MY   # posición superior actual (iremos bajando)
-
-    ROW = 14      # altura estándar de fila
+    y = PH - MY
+    ROW = 14
 
     # ════════════════════════════════════════════════════════════════════════
     # 1. CABECERA
@@ -5117,12 +5155,15 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     title_w = USEW - logo_w - meta_w
     cab_h   = 18 * mm
 
-    # Logo box
+    # ── Logo box ──────────────────────────────────────────────────────────
+    # ✅ Para usar un logo real: reemplazar el drawCentredString por c.drawImage(
+    #    "ruta/al/logo.png", x0 + 5, y - cab_h + 5, width=logo_w - 10, height=cab_h - 10,
+    #    preserveAspectRatio=True, mask='auto')
     _rect(c, x0, y - cab_h, logo_w, cab_h, fill=C_WHITE)
     c.saveState()
     c.setFont("Helvetica-Bold", 8)
     c.setFillColor(C_HEADER)
-    c.drawCentredString(x0 + logo_w / 2, y - cab_h / 2 - 4, "LOGO EXPRESO")
+    c.drawCentredString(x0 + logo_w / 2, y - cab_h / 2 - 4, "LOGO EMPRESA")
     c.restoreState()
 
     # Título central
@@ -5139,13 +5180,12 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     rh    = cab_h / 3
     metas = [("Código", "F-TC-002"), ("Fecha", _fmt_date(date.today())), ("Versión", "5")]
     for i, (k, v) in enumerate(metas):
-        bg = C_WHITE if i % 2 == 0 else C_WHITE
-        _rect(c, mx0, y - cab_h + (2 - i) * rh, meta_w, rh, fill=bg)
+        _rect(c, mx0, y - cab_h + (2 - i) * rh, meta_w, rh, fill=C_WHITE)
         _text(c, f"{k}:  {v}", mx0, y - cab_h + (2 - i) * rh, meta_w, rh, size=7)
 
     y -= cab_h
 
-    # ─── Fila PLACA / FECHA ───────────────────────────────────────────────
+    # ─── Fila PLACA / FECHA ──────────────────────────────────────────────
     hw2 = USEW / 2
     placa_lw = 40
     _rect(c, x0, y - ROW, hw2, ROW, fill=C_WHITE)
@@ -5163,11 +5203,10 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     y -= ROW
 
     # ════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 1: DATOS DEL EQUIPO
+    # SECCIÓN 1: DATOS DEL EQUIPO   ✅ antes era sin número
     # ════════════════════════════════════════════════════════════════════════
     y = _sec_header(c, "1. DATOS DEL EQUIPO", x0, y, USEW)
 
-    # Fila Marca + checkboxes Tipo
     tipo_equipo = equipo.get("tipo_equipo", "")
     CHECKBOXES = [
         ("PORTÁTIL",  ["Laptop"]),
@@ -5184,7 +5223,7 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     cb_w          = cb_area_w / len(CHECKBOXES)
 
     _rect(c, x0, y - ROW, USEW, ROW, fill=C_WHITE)
-    _rect(c, x0, y - ROW, marca_label_w, ROW, fill=C_LABEL)
+    _rect(c, x0, y - ROW, marca_label_w, ROW, fill=C_WHITE)
     _text(c, "Marca", x0, y - ROW, marca_label_w, ROW, bold=True)
     _text(c, equipo.get("marca", ""), x0 + marca_label_w, y - ROW, marca_val_w, ROW, align="left")
 
@@ -5195,7 +5234,6 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     for i, (label, matches) in enumerate(CHECKBOXES):
         cx = tipo_x + tipo_label_w + i * cb_w
         _rect(c, cx, y - ROW, cb_w, ROW)
-        # Caja del checkbox
         bx, by, bs = cx + 3, y - ROW + 3, 7
         _rect(c, bx, by, bs, bs, fill=C_WHITE)
         if tipo_equipo in matches:
@@ -5206,7 +5244,6 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
             c.restoreState()
         _text(c, label, cx + bs + 5, y - ROW, cb_w - bs - 7, ROW, size=6, align="left")
 
-    # Fila Modelo
     y -= ROW
     _rect(c, x0, y - ROW, USEW, ROW, fill=C_ALT)
     _rect(c, x0, y - ROW, marca_label_w, ROW, fill=C_LABEL)
@@ -5217,7 +5254,7 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     y -= ROW
 
     # ════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 2: CONFIGURACIÓN DE HARDWARE
+    # SECCIÓN 2: CONFIGURACIÓN DE HARDWARE   ✅ antes era "2." (igual que SO)
     # ════════════════════════════════════════════════════════════════════════
     y = _sec_header(c, "2. CONFIGURACIÓN DE HARDWARE", x0, y, USEW)
 
@@ -5229,40 +5266,62 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
     ssd_val = disco if "SSD" in disco.upper() or "SSD" in tecno.upper() else ""
     hdd_val = disco if "HDD" in disco.upper() else ""
     if not ssd_val and not hdd_val:
-        ssd_val = disco  # si no se puede inferir, poner en SSD
+        ssd_val = disco
 
-    hw_left  = [("Procesador", equipo.get("procesador", "") or ""),
-                ("Memoria RAM", equipo.get("ram", "") or ""),
-                ("SSD",         ssd_val),
-                ("HDD",         hdd_val)]
-    hw_right = [("Marca Monitor", equipo.get("marca_monitor", "") or "N.A"),
-                ("Placa Monitor", equipo.get("placa_monitor", "") or "N.A"),
-                ("Nombre Equipo", equipo.get("nombre_equipo", "") or ""),
-                ("",              "")]
+    hw_left  = [
+        ("Procesador",   equipo.get("procesador", "") or ""),
+        ("Memoria RAM",  equipo.get("ram", "") or ""),
+        ("SSD",          ssd_val),
+        ("HDD",          hdd_val),
+    ]
+    hw_right = [
+        ("Marca Monitor", equipo.get("marca_monitor", "") or "N.A"),
+        ("Placa Monitor", equipo.get("placa_monitor", "") or "N.A"),
+        ("Nombre Equipo", equipo.get("nombre_equipo", "") or ""),
+        ("",              ""),
+    ]
 
     for i, ((lk, lv), (rk, rv)) in enumerate(zip(hw_left, hw_right)):
         bg = C_ALT if i % 2 else C_WHITE
         _rect(c, x0, y - ROW, USEW, ROW, fill=bg, stroke=False)
         _rect(c, x0, y - ROW, USEW, ROW, fill=None)
-        # Izquierda
         _rect(c, x0, y - ROW, hw_label_w, ROW, fill=C_LABEL)
         _text(c, lk, x0, y - ROW, hw_label_w, ROW, bold=True)
         _text(c, lv, x0 + hw_label_w, y - ROW, col_w - hw_label_w, ROW, align="left")
-        # Derecha
         _rect(c, x0 + col_w, y - ROW, hw_label_w, ROW, fill=C_LABEL)
         _text(c, rk, x0 + col_w, y - ROW, hw_label_w, ROW, bold=True)
         _text(c, rv, x0 + col_w + hw_label_w, y - ROW, col_w - hw_label_w, ROW, align="left")
         y -= ROW
 
     # ════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 3: SISTEMA OPERATIVO
+    # SECCIÓN 3: PERIFÉRICOS   ✅ sección nueva para completar la numeración
+    # ════════════════════════════════════════════════════════════════════════
+    y = _sec_header(c, "3. PERIFÉRICOS", x0, y, USEW)
+
+    per_label_w = 70
+    per_rows = [
+        ("Mouse",     equipo.get("mouse", "") or ""),
+        ("Teclado",   equipo.get("teclado", "") or ""),
+        ("Diadema",   equipo.get("diadema", "") or ""),
+        ("Cámara",    equipo.get("camara", "") or ""),
+    ]
+    for i, (pk, pv) in enumerate(per_rows):
+        bg = C_ALT if i % 2 else C_WHITE
+        _rect(c, x0, y - ROW, USEW, ROW, fill=bg, stroke=False)
+        _rect(c, x0, y - ROW, USEW, ROW, fill=None)
+        _rect(c, x0, y - ROW, per_label_w, ROW, fill=C_LABEL)
+        _text(c, pk, x0, y - ROW, per_label_w, ROW, bold=True)
+        _text(c, pv, x0 + per_label_w, y - ROW, USEW - per_label_w, ROW, align="left")
+        y -= ROW
+
+    # ════════════════════════════════════════════════════════════════════════
+    # SECCIÓN 4: SISTEMA OPERATIVO   ✅ antes era "4." saltando desde "2."
     # ════════════════════════════════════════════════════════════════════════
     y = _sec_header(c, "4. SISTEMA OPERATIVO INSTALADO", x0, y, USEW)
 
     desc_w = USEW * 0.55
     lic_w  = USEW - desc_w
 
-    # Sub-cabecera
     _rect(c, x0, y - ROW, desc_w, ROW, fill=C_LABEL)
     _rect(c, x0 + desc_w, y - ROW, lic_w, ROW, fill=C_LABEL)
     _text(c, "Descripción", x0, y - ROW, desc_w, ROW, bold=True)
@@ -5273,9 +5332,17 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
         equipo.get("sistema_operativo", ""),
         equipo.get("version_so", ""),
     ]))
+
+    # ✅ CORREGIDO: antes "OFFICE HOGAR Y EMPRESAS 2016" estaba hardcodeado.
+    #    Ahora usa el campo licenciamiento_office del equipo. Si está vacío → "N.A"
+    office_lic = equipo.get("licenciamiento_office", "") or "N.A"
+
+    # ✅ CORREGIDO: el nombre de la suite de Office también era hardcodeado.
+    #    Ahora es genérico. Si se quiere mostrar el nombre exacto, agregarlo como
+    #    campo "nombre_office" en la tabla equipos.
     so_rows = [
-        (so_name, equipo.get("licenciamiento_so", "") or ""),
-        ("OFFICE HOGAR Y EMPRESAS 2016", equipo.get("licenciamiento_office", "") or ""),
+        (so_name,          equipo.get("licenciamiento_so", "") or ""),
+        ("Microsoft Office", office_lic),
     ]
     for i, (d, l) in enumerate(so_rows):
         bg = C_ALT if i % 2 else C_WHITE
@@ -5286,14 +5353,13 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
         y -= ROW
 
     # ════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 4: ASIGNACIÓN Y REASIGNACIÓN
+    # SECCIÓN 5: ASIGNACIÓN Y REASIGNACIÓN   ✅ antes era "5." (correcto)
     # ════════════════════════════════════════════════════════════════════════
     y = _sec_header(c, "5. ASIGNACION Y REASIGNACION", x0, y, USEW)
 
     a_cols = [USEW * 0.30, USEW * 0.28, USEW * 0.22, USEW * 0.20]
     a_hdrs = ["Usuario Responsable", "Cargo", "Ubicacion equipo", "Fecha"]
 
-    # Cabecera tabla
     cx = x0
     for w, h in zip(a_cols, a_hdrs):
         _rect(c, cx, y - ROW, w, ROW, fill=C_LABEL)
@@ -5320,17 +5386,14 @@ def generar_hoja_vida_pdf(equipo: dict, historial: list[dict] = None) -> bytes:
         y -= ROW
 
     # ════════════════════════════════════════════════════════════════════════
-    # SECCIÓN 5: MANTENIMIENTOS
+    # SECCIÓN 6: MANTENIMIENTOS   ✅ antes era "6." (correcto)
     # ════════════════════════════════════════════════════════════════════════
     y = _sec_header(c, "6. MANTENIMIENTOS", x0, y, USEW)
 
     m_cols = [USEW * 0.25, USEW * 0.25, USEW * 0.25, USEW * 0.25]
-    m_hdrs_top = ["Fecha realización", "Realizado por", 
-    
-    "Mantenimiento", ""]
+    m_hdrs_top = ["Fecha realización", "Realizado por", "Mantenimiento", ""]
     m_sub      = ["", "", "PREVENTIVO", "CORRECTIVO"]
 
-    # Cabecera doble
     cx = x0
     for w, h in zip(m_cols, m_hdrs_top):
         if h:
@@ -6913,18 +6976,53 @@ export function useReportesController() {
   }, [asignaciones, usuarios, equipos]);
 
   // ── Exportar a CSV ────────────────────────────────────────────────────────
+  /**
+   * Genera y descarga un archivo CSV correctamente formateado.
+   *
+   * ✅ CORRECCIONES aplicadas respecto a la versión original:
+   *
+   *  1. BOM UTF-8 (\uFEFF al inicio): Excel detecta la codificación automáticamente
+   *     y muestra tildes y ñ sin necesidad de pasos adicionales de importación.
+   *
+   *  2. Escape de comillas internas: si un valor contiene una comilla doble ("),
+   *     se duplica ("") según el estándar RFC 4180. Sin esto, el CSV queda
+   *     malformado y algunas celdas se desplazan.
+   *
+   *  3. Escape de saltos de línea: si un valor contiene \n o \r, se conserva
+   *     dentro de la celda entrecomillada sin romper la estructura del archivo.
+   *
+   *  4. Todos los valores van siempre entrecomillados para evitar ambigüedades
+   *     con comas, puntos y comas u otros separadores regionales.
+   */
   const exportarCSV = (datos: Record<string, string | number>[], nombreArchivo: string) => {
     if (!datos.length) return;
-    const headers = Object.keys(datos[0]).join(',');
-    const filas = datos.map((row) => Object.values(row).map((v) => `"${v}"`).join(','));
-    const csv = [headers, ...filas].join('\n');
+
+    const escaparCelda = (valor: string | number): string => {
+      const str = String(valor ?? '');
+      // Si contiene coma, comilla o salto de línea → entrecomillar y escapar comillas internas
+      const necesitaComillas = str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r');
+      const escapado = str.replace(/"/g, '""'); // RFC 4180: " → ""
+      return necesitaComillas ? `"${escapado}"` : `"${escapado}"`;
+      // Nota: aquí siempre ponemos comillas por simplicidad y consistencia
+    };
+
+    const headers = Object.keys(datos[0]).map(escaparCelda).join(',');
+    const filas = datos.map((row) =>
+      Object.values(row).map(escaparCelda).join(',')
+    );
+
+    // ✅ \uFEFF = BOM UTF-8 — hace que Excel abra el archivo sin preguntar codificación
+    const csv = '\uFEFF' + [headers, ...filas].join('\r\n'); // \r\n = estándar RFC 4180
+
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${nombreArchivo}_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a); // necesario en Firefox
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url); // ✅ liberar memoria inmediatamente después de usar
   };
 
   return { reporteInventario, reporteSinDocs, reporteHistorial, exportarCSV, loading, error };
@@ -10654,7 +10752,7 @@ const ESTADO_COLORS: Record<string, string> = {
   Baja: '#94a3b8',
   'En revisión': '#f59e0b',
   Rentado: '#8b5cf6',
-  Desposicion: '#6366f1',
+  Disposicion: '#6366f1',
 };
 
 export function DashboardPage() {
@@ -10913,21 +11011,50 @@ import { useDocumentosController } from '../../../controllers/useDocumentosContr
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
-import { Plus, FileText, Download } from 'lucide-react';
+import { Plus, FileText, Download, Paperclip } from 'lucide-react';
 import type { TipoDocumento } from '../../../models/types/index';
 import { documentosApi } from '../../../services/api';
 
 const TIPOS: TipoDocumento[] = ['Acta','Hoja de vida','Factura','Garantía','Contrato','Manual','Otro'];
 
+interface FormDocumento {
+  nombre: string;
+  tipo: TipoDocumento | '';
+  equipo_id: string;
+  usuario_id: string;
+  url: string;
+  cargado_por: string;
+  archivo: File | null;
+}
+
+const FORM_VACIO: FormDocumento = {
+  nombre: '', tipo: '', equipo_id: '', usuario_id: '', url: '', cargado_por: 'Admin', archivo: null,
+};
+
 export function DocumentosPage() {
   const ctrl = useDocumentosController();
-  const [form, setForm] = useState<{ nombre: string; tipo: TipoDocumento | ''; equipo_id: string; usuario_id: string; url: string; cargado_por: string }>({
-    nombre: '', tipo: '', equipo_id: '', usuario_id: '', url: '', cargado_por: 'Admin',
-  });
+  const [form, setForm] = useState<FormDocumento>(FORM_VACIO);
+  const [formError, setFormError] = useState('');
 
   const handleSubir = () => {
-    if (!form.nombre || !form.tipo) return;
-    ctrl.subir({ nombre: form.nombre, tipo: form.tipo as TipoDocumento, equipo_id: form.equipo_id || undefined, usuario_id: form.usuario_id || undefined, url: form.url || '#', cargado_por: form.cargado_por });
+    if (!form.nombre || !form.tipo) {
+      setFormError('El nombre y el tipo son obligatorios.');
+      return;
+    }
+    if (!form.archivo && !form.url) {
+      setFormError('Adjunta un archivo o indica una URL.');
+      return;
+    }
+    setFormError('');
+    ctrl.subir({
+      nombre: form.nombre,
+      tipo: form.tipo as TipoDocumento,
+      equipo_id: form.equipo_id || undefined,
+      usuario_id: form.usuario_id || undefined,
+      url: form.url,
+      cargado_por: form.cargado_por,
+      archivo: form.archivo ?? undefined,
+    });
   };
 
   const tipoVariant: Record<TipoDocumento, 'blue' | 'green' | 'orange' | 'purple' | 'indigo' | 'gray' | 'yellow'> = {
@@ -10944,7 +11071,7 @@ export function DocumentosPage() {
           {TIPOS.map((t) => <option key={t}>{t}</option>)}
         </select>
         <div className="sm:ml-auto">
-          <Button icon={<Plus size={16} />} onClick={() => { setForm({ nombre: '', tipo: '', equipo_id: '', usuario_id: '', url: '', cargado_por: 'Admin' }); ctrl.setModalAbierto(true); }} className="w-full sm:w-auto">
+          <Button icon={<Plus size={16} />} onClick={() => { setForm(FORM_VACIO); setFormError(''); ctrl.setModalAbierto(true); }} className="w-full sm:w-auto">
             Subir documento
           </Button>
         </div>
@@ -11005,13 +11132,32 @@ export function DocumentosPage() {
 
       <Modal abierto={ctrl.modalAbierto} onCerrar={() => ctrl.setModalAbierto(false)} titulo="Subir documento" size="md">
         <div className="space-y-4">
+          {formError && <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{formError}</div>}
           <Field label="Nombre del documento *" value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} />
           <SelectField label="Tipo *" value={form.tipo} onChange={(e) => setForm((f) => ({ ...f, tipo: e.target.value as TipoDocumento }))} options={TIPOS.map((t) => ({ value: t, label: t }))} />
           <SelectField label="Equipo relacionado" value={form.equipo_id} onChange={(e) => setForm((f) => ({ ...f, equipo_id: e.target.value }))}
             options={ctrl.equipos.map((e) => ({ value: e.id, label: `${e.placa} – ${e.tipo_equipo}` }))} />
           <SelectField label="Usuario relacionado" value={form.usuario_id} onChange={(e) => setForm((f) => ({ ...f, usuario_id: e.target.value }))}
             options={ctrl.usuarios.map((u) => ({ value: u.id, label: u.nombre }))} />
-          <Field label="URL / Ruta del archivo" value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} placeholder="/docs/archivo.pdf" />
+
+          {/* Archivo adjunto */}
+          <div className="flex flex-col gap-1">
+            <label htmlFor="doc-archivo" className="text-sm font-medium text-slate-700">Archivo adjunto</label>
+            <input
+              id="doc-archivo"
+              type="file"
+              onChange={(e) => setForm((f) => ({ ...f, archivo: e.target.files?.[0] ?? null }))}
+              className="text-sm text-slate-600 cursor-pointer file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:text-sm file:font-medium hover:file:bg-blue-100"
+            />
+            {form.archivo && (
+              <p className="flex items-center gap-1 text-xs text-slate-500">
+                <Paperclip size={12} />
+                {form.archivo.name} ({(form.archivo.size / 1024).toFixed(1)} KB)
+              </p>
+            )}
+          </div>
+
+          <Field label="URL externa (opcional si adjuntas archivo)" value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} placeholder="https://... o /docs/archivo.pdf" />
         </div>
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
           <Button variant="outline" onClick={() => ctrl.setModalAbierto(false)}>Cancelar</Button>
@@ -11398,132 +11544,151 @@ export function LoginPage() {
 </file>
 
 <file path="frontend/src/views/pages/reportes/ReportesPage.tsx">
-// VIEW: Página Reportes
-import { useReportesController } from '../../../controllers/useReportesController';
-import { Button, Card, Table, Th, Td, Badge } from '../../components/ui/index';
-import { Download, FileSpreadsheet } from 'lucide-react';
+// CONTROLLER: Reportes
+// Genera los datos para los reportes exportables — datos desde la API REST.
 
-export function ReportesPage() {
-  const { reporteInventario, reporteSinDocs, reporteHistorial, exportarCSV } = useReportesController();
+import { useMemo, useEffect, useCallback, useState } from 'react';
+import { useEquiposStore } from '../../../models/stores/useEquiposStore';
+import { useUsuariosStore } from '../../../models/stores/useUsuariosStore';
+import { useAsignacionesStore } from '../../../models/stores/useAsignacionesStore';
+import { useDocumentosStore } from '../../../models/stores/useAccesoriosStore';
+import { equiposApi, usuariosApi, asignacionesApi, documentosApi } from '../../../services/api';
 
-  return (
-    <div className="space-y-8">
+// ─── Helper para escapar valores CSV según RFC 4180 ─────────────────────────
+function escapeCSV(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  
+  let str = String(value);
+  
+  // Si contiene comillas dobles, duplicarlas
+  if (str.includes('"')) {
+    str = str.replace(/"/g, '""');
+  }
+  
+  // Si contiene comas, saltos de línea o comillas dobles, envolver entre comillas dobles
+  if (str.includes(',') || str.includes('\n') || str.includes('\r') || str.includes('"')) {
+    str = `"${str}"`;
+  }
+  
+  return str;
+}
 
-      {/* Reporte 1: Inventario completo */}
-      <Card>
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-700">Inventario completo de activos</h3>
-            <p className="text-xs text-slate-500">{reporteInventario.length} registros</p>
-          </div>
-          <Button variant="outline" icon={<Download size={14} />} onClick={() => exportarCSV(reporteInventario as never, 'inventario_activos')}>
-            Exportar CSV
-          </Button>
-        </div>
-        <div className="overflow-x-auto max-h-80 overflow-y-auto">
-          <Table>
-            <thead>
-              <tr>
-                <Th>Placa</Th><Th>Tipo</Th><Th>Marca/Modelo</Th><Th>SO</Th>
-                <Th>Criticidad</Th><Th>Estado</Th><Th>Responsable</Th><Th>Área</Th><Th>Rentado</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {reporteInventario.map((r, i) => (
-                <tr key={i} className="hover:bg-slate-50">
-                  <Td className="font-mono text-blue-700">{r.placa}</Td>
-                  <Td>{r.tipo}</Td>
-                  <Td>{[r.marca, r.modelo].filter(Boolean).join(' ')}</Td>
-                  <Td>{r.so || '—'}</Td>
-                  <Td>
-                    <Badge variant={r.criticidad === 'Alta' ? 'orange' : r.criticidad === 'Crítica' ? 'red' : r.criticidad === 'Media' ? 'yellow' : 'green'}>
-                      {r.criticidad}
-                    </Badge>
-                  </Td>
-                  <Td>{r.estado}</Td>
-                  <Td>{r.responsable}</Td>
-                  <Td>{r.area || '—'}</Td>
-                  <Td>{r.es_rentado === 'Sí' ? <Badge variant="purple">Rentado</Badge> : '—'}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </div>
-      </Card>
+export function useReportesController() {
+  const { equipos, setEquipos } = useEquiposStore();
+  const { usuarios, setUsuarios } = useUsuariosStore();
+  const { asignaciones, setAsignaciones } = useAsignacionesStore();
+  const { documentos, setDocumentos } = useDocumentosStore();
 
-      {/* Reporte 2: Sin documentos */}
-      <Card>
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-700 flex items-center gap-2">
-              Activos con documentos faltantes
-              {reporteSinDocs.length > 0 && <Badge variant="red">{reporteSinDocs.length}</Badge>}
-            </h3>
-            <p className="text-xs text-slate-500">Equipos sin acta o sin hoja de vida</p>
-          </div>
-          <Button variant="outline" icon={<Download size={14} />} onClick={() => exportarCSV(reporteSinDocs as never, 'activos_sin_documentos')}>
-            Exportar CSV
-          </Button>
-        </div>
-        {reporteSinDocs.length === 0 ? (
-          <div className="py-10 text-center text-sm text-emerald-600 font-medium">
-            ✓ Todos los activos tienen documentación completa
-          </div>
-        ) : (
-          <Table>
-            <thead>
-              <tr><Th>Placa</Th><Th>Tipo</Th><Th>Estado</Th><Th>Sin acta</Th><Th>Sin hoja de vida</Th></tr>
-            </thead>
-            <tbody>
-              {reporteSinDocs.map((r, i) => (
-                <tr key={i} className="hover:bg-slate-50">
-                  <Td className="font-mono text-blue-700">{r.placa}</Td>
-                  <Td>{r.tipo}</Td>
-                  <Td>{r.estado}</Td>
-                  <Td>{r.sin_acta === 'Sí' ? <Badge variant="red">Falta</Badge> : <Badge variant="green">OK</Badge>}</Td>
-                  <Td>{r.sin_hoja_vida === 'Sí' ? <Badge variant="red">Falta</Badge> : <Badge variant="green">OK</Badge>}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        )}
-      </Card>
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-      {/* Reporte 3: Historial de asignaciones */}
-      <Card>
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-700">Historial completo de asignaciones</h3>
-            <p className="text-xs text-slate-500">{reporteHistorial.length} registros</p>
-          </div>
-          <Button variant="outline" icon={<FileSpreadsheet size={14} />} onClick={() => exportarCSV(reporteHistorial as never, 'historial_asignaciones')}>
-            Exportar CSV
-          </Button>
-        </div>
-        <div className="overflow-x-auto max-h-80 overflow-y-auto">
-          <Table>
-            <thead>
-              <tr><Th>Placa</Th><Th>Tipo</Th><Th>Usuario</Th><Th>Área</Th><Th>Fecha asignación</Th><Th>Fecha devolución</Th><Th>Estado</Th></tr>
-            </thead>
-            <tbody>
-              {reporteHistorial.map((r, i) => (
-                <tr key={i} className="hover:bg-slate-50">
-                  <Td className="font-mono text-blue-700">{r.equipo_placa}</Td>
-                  <Td>{r.equipo_tipo}</Td>
-                  <Td>{r.usuario}</Td>
-                  <Td>{r.area}</Td>
-                  <Td>{r.fecha_asignacion}</Td>
-                  <Td>{r.fecha_devolucion === 'Activa' ? <span className="text-emerald-600 font-medium">Activa</span> : r.fecha_devolucion}</Td>
-                  <Td><Badge variant={r.estado === 'Activa' ? 'green' : r.estado === 'Devuelta' ? 'blue' : 'red'}>{r.estado}</Badge></Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </div>
-      </Card>
+  // ── Carga inicial (sin cambios) ──────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [eqRes, usrRes, asigRes, docRes] = await Promise.all([
+        equiposApi.getAll(),
+        usuariosApi.getAll(),
+        asignacionesApi.getAll(),
+        documentosApi.getAll(),
+      ]);
+      setEquipos(eqRes.data);
+      setUsuarios(usrRes.data);
+      setAsignaciones(asigRes.data);
+      setDocumentos(docRes.data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al cargar datos para reportes.');
+    } finally {
+      setLoading(false);
+    }
+  }, [setEquipos, setUsuarios, setAsignaciones, setDocumentos]);
 
-    </div>
-  );
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── Reporte: inventario completo (sin cambios) ───────────────────────────
+  const reporteInventario = useMemo(() => {
+    return equipos.map((e) => {
+      const asignacion = asignaciones.find((a) => a.equipo_id === e.id && a.estado === 'Activa');
+      const usuario = asignacion ? usuarios.find((u) => u.id === asignacion.usuario_id) : null;
+      return {
+        placa: e.placa,
+        serial: e.serial ?? '',
+        tipo: e.tipo_equipo,
+        marca: e.marca ?? '',
+        modelo: e.modelo ?? '',
+        so: e.sistema_operativo ?? '',
+        criticidad: e.criticidad,
+        confidencialidad: e.confidencialidad,
+        estado: e.estado,
+        responsable: usuario?.nombre ?? 'Sin asignar',
+        area: usuario?.area ?? '',
+        es_rentado: e.es_rentado ? 'Sí' : 'No',
+        fecha_registro: e.fecha_registro,
+      };
+    });
+  }, [equipos, asignaciones, usuarios]);
+
+  // ── Reporte: equipos sin documentos (sin cambios) ────────────────────────
+  const reporteSinDocs = useMemo(() => {
+    const equiposConActa = new Set(documentos.filter((d) => d.tipo === 'Acta').map((d) => d.equipo_id));
+    const equiposConHv = new Set(documentos.filter((d) => d.tipo === 'Hoja de vida').map((d) => d.equipo_id));
+    return equipos
+      .filter((e) => e.estado !== 'Baja')
+      .filter((e) => !equiposConActa.has(e.id) || !equiposConHv.has(e.id))
+      .map((e) => ({
+        placa: e.placa,
+        tipo: e.tipo_equipo,
+        estado: e.estado,
+        sin_acta: equiposConActa.has(e.id) ? 'No' : 'Sí',
+        sin_hoja_vida: equiposConHv.has(e.id) ? 'No' : 'Sí',
+      }));
+  }, [equipos, documentos]);
+
+  // ── Reporte: historial de asignaciones (sin cambios) ─────────────────────
+  const reporteHistorial = useMemo(() => {
+    return asignaciones.map((a) => {
+      const usuario = usuarios.find((u) => u.id === a.usuario_id);
+      const equipo = equipos.find((e) => e.id === a.equipo_id);
+      return {
+        equipo_placa: equipo?.placa ?? '',
+        equipo_tipo: equipo?.tipo_equipo ?? '',
+        usuario: usuario?.nombre ?? '',
+        area: usuario?.area ?? '',
+        fecha_asignacion: a.fecha_asignacion,
+        fecha_devolucion: a.fecha_devolucion ?? 'Activa',
+        estado: a.estado,
+      };
+    }).sort((a, b) => b.fecha_asignacion.localeCompare(a.fecha_asignacion));
+  }, [asignaciones, usuarios, equipos]);
+
+  // ─── Exportar a CSV (corregido: BOM + escape de comillas) ─────────────────
+  const exportarCSV = (datos: Record<string, string | number>[], nombreArchivo: string) => {
+    if (!datos.length) return;
+    
+    // Obtener cabeceras
+    const headers = Object.keys(datos[0]);
+    
+    // Construir filas aplicando escapeCSV a cada valor
+    const filas = datos.map((fila) =>
+      headers.map((header) => escapeCSV(fila[header])).join(',')
+    );
+    
+    // Unir cabeceras y filas
+    const csvContent = [headers.join(','), ...filas].join('\n');
+    
+    // Añadir BOM UTF-8 (carácter \uFEFF) para que Excel interprete bien las tildes
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${nombreArchivo}_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return { reporteInventario, reporteSinDocs, reporteHistorial, exportarCSV, loading, error };
 }
 </file>
 
@@ -12300,6 +12465,7 @@ export default defineConfig({
     "uuid": "^13.0.2"
   },
   "dependencies": {
+    "@heyputer/puter.js": "^2.5.1",
     "mysql2": "^3.22.3",
     "yargs": "^18.0.0"
   }

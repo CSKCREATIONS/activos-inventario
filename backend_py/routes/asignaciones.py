@@ -8,8 +8,7 @@ from fastapi.responses import Response
 from models.asignacion import AsignacionModel
 from models.documento import DocumentoModel
 from models.equipo import EquipoModel
-from routes.auth import get_current_user
-from routes.equipos import _generar_y_registrar_hoja_vida, _requiere_hoja_vida
+from dependencies import get_current_user   # ✅ Correcto (ya existe en dependencies.py)from routes.equipos import _generar_y_registrar_hoja_vida, _requiere_hoja_vida
 from utils.accesorios import normalizar_accesorios_entregados
 from utils.acta_entrega_pdf import generar_acta_entrega_pdf
 from utils.files import safe_filename
