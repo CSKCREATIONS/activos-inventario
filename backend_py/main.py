@@ -44,19 +44,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
-    # ✅ CORREGIDO: sin expose_headers, el frontend no puede leer Content-Disposition
-    #    en peticiones cross-origin → los nombres de descarga siempre salían como
-    #    "acta_{id}.pdf" en vez del nombre real generado por el backend.
+    
     expose_headers=["Content-Disposition"],
 )
 
-# ─── Archivos estáticos (uploads) ─────────────────────────────────────────────
-# ⚠️  PENDIENTE CRÍTICO (1.3 del informe): este mount sirve actas y hojas de vida
-#     SIN autenticación. Cualquiera que conozca la URL puede descargarlas.
-#     La solución definitiva es eliminar este mount y servir todo a través del
-#     endpoint autenticado GET /api/documentos/{id}/download que ya existe.
-#     Por ahora se mantiene para no romper funcionalidad existente.
-app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 protected = [Depends(get_current_user)]
@@ -84,9 +76,7 @@ async def health():
 
 
 # ─── Error handler global ─────────────────────────────────────────────────────
-# ✅ CORREGIDO: antes devolvía str(exc) al cliente, filtrando mensajes internos
-#    de MySQL con nombres de tablas, columnas y datos. Ahora se loguea el detalle
-#    en el servidor y el cliente solo recibe un mensaje genérico.
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error("Error no controlado en %s %s: %s", request.method, request.url.path, exc, exc_info=True)
@@ -99,5 +89,4 @@ async def global_exception_handler(request: Request, exc: Exception):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    # ⚠️  reload=True solo para desarrollo — usar gunicorn en producción
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

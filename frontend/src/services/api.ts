@@ -295,3 +295,13 @@ export const importarApi = {
       });
   },
 };
+
+
+// Usuarios del sistema (admin)
+export const susuariosApi = {
+  getAll: () => request<{ data: any[] }>('/Suscriptores'),  // Nota: la ruta es /api/Susuarios (case sensitive)
+  getById: (id: string) => request<{ data: any }>(`/Suscriptores/${id}`),
+  create: (body: any) => request<{ data: any }>('/Suscriptores', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: string, body: any) => request<{ data: any }>(`/Suscriptores/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  remove: (id: string) => request<{ message: string }>(`/Suscriptores/${id}`, { method: 'DELETE' }),
+};

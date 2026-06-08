@@ -2,6 +2,7 @@
 // Muestra ficha completa, responsable actual e historial de asignaciones.
 
 import { useActivosController } from '../../../controllers/useActivosController';
+import { asignacionesApi, equiposApi } from '../../../services/api';
 import {
   Button, Card, EstadoBadge, CriticidadBadge, ConfidencialidadBadge, Badge, Table, Th, Td
 } from '../../components/ui/index';
@@ -16,6 +17,38 @@ export function ActivoDetalle({ equipoId, onVolver }: Props) {
 
   const responsable = ctrl.getResponsableActual(equipoId);
   const historial = ctrl.getHistorialEquipo(equipoId);
+
+
+  const descargarActa = async (asignacionId: string) => {
+    try {
+      const { blob, filename } = await asignacionesApi.downloadActa(asignacionId, true);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error descargando acta:', error);
+      alert('No se pudo descargar el acta.');
+    }
+  };
+
+  const descargarHojaVida = async (equipoId: string, placa: string) => {
+    try {
+      const blob = await equiposApi.getHojaVidaPdf(equipoId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `hoja_vida_${placa}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error descargando hoja de vida:', error);
+      alert('No se pudo descargar la hoja de vida.');
+    }
+  };
+  
 
   return (
     <div className="space-y-6">
@@ -140,8 +173,24 @@ export function ActivoDetalle({ equipoId, onVolver }: Props) {
                   </Td>
                   <Td>
                     <div className="flex gap-1">
-                      {h.acta_pdf && <Badge variant="blue"><FileText size={10} className="mr-1" />Acta</Badge>}
-                      {h.hoja_vida_pdf && <Badge variant="green"><FileText size={10} className="mr-1" />H. Vida</Badge>}
+                      {h.acta_pdf && (
+                        <button
+                          onClick={() => descargarActa(h.id)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+                        >
+                          <FileText size={10} />
+                          Acta
+                        </button>
+                      )}
+                      {h.hoja_vida_pdf && (
+                        <button
+                          onClick={() => descargarHojaVida(equipo.id, equipo.placa)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+                        >
+                          <FileText size={10} />
+                          H. Vida
+                        </button>
+                      )}
                     </div>
                   </Td>
                 </tr>
