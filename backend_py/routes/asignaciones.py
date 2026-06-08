@@ -73,19 +73,13 @@ async def _generar_y_registrar_acta(
                 return pdf_bytes, filename, file_url
 
     # Si llegamos aquí, hay que regenerar el PDF
-    tpl_paths = [Path('Doc') / 'Julian Castro Sena Acta.pdf']
-    pdf_bytes = None
-    for p in tpl_paths:
-        if p.exists():
-            pdf_bytes = p.read_bytes()
-            break
-    if pdf_bytes is None:
-        pdf_bytes = generar_acta_entrega_pdf(
-            dict(asignacion),
-            accesorios_opciones=ACCESORIOS_OPCIONES,
-            accesorios_entregados=accesorios_entregados,
-            entregado_por=cargado_por,
-        )
+    # AHORA (siempre genera con datos)
+    pdf_bytes = generar_acta_entrega_pdf(
+    dict(asignacion),
+    accesorios_opciones=ACCESORIOS_OPCIONES,
+    accesorios_entregados=accesorios_entregados,
+    entregado_por=cargado_por,
+)
 
     # Guardar en disco
     os.makedirs(UPLOADS_DIR, exist_ok=True)

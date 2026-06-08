@@ -54,6 +54,7 @@ backend_py/config/migration_suministros.sql
 backend_py/config/migration_usuario_correo_opcional.sql
 backend_py/config/migration_usuarios_multiples.sql
 backend_py/config/migration_usuarios.sql
+backend_py/dependencies.py
 backend_py/main.py
 backend_py/models/__init__.py
 backend_py/models/accesorio.py
@@ -175,6 +176,7 @@ frontend/tsconfig.app.json
 frontend/tsconfig.json
 frontend/tsconfig.node.json
 frontend/vite.config.ts
+hola.html
 package.json
 README.md
 seed.js
@@ -192,6 +194,8 @@ DB_PASSWORD=
 DB_NAME=inventory_system
 FRONTEND_URL=http://localhost:5173
 UPLOADS_DIR=uploads
+
+JWT_SECRET=abc123xyz_secret_key_generada_con_openssl_rand_hex_32
 </file>
 
 <file path="backend_py/.env.example">
@@ -494,6 +498,29 @@ CREATE INDEX IF NOT EXISTS idx_usuarios_area ON usuarios(area);
 CREATE INDEX IF NOT EXISTS idx_usuarios_sede ON usuarios(sede);
 </file>
 
+<file path="backend_py/dependencies.py">
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
+import os
+
+security = HTTPBearer()
+JWT_SECRET = os.getenv("JWT_SECRET")
+JWT_ALGORITHM = "HS256"
+
+def get_current_user(creds: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(creds.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
+
+def require_admin(current_user: dict = Depends(get_current_user)):
+    if current_user.get("rol") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requiere rol administrador")
+    return current_user
+</file>
+
 <file path="backend_py/main.py">
 import os
 from contextlib import asynccontextmanager
@@ -510,7 +537,7 @@ from routes import (
     documentos, dashboard, susuarios, suministros,
     auth, licencias, importar,
 )
-from routes.auth import get_current_user
+from dependencies  import get_current_user
 
 load_dotenv()
 
@@ -1675,59 +1702,52 @@ class SuministroModel:
 </file>
 
 <file path="backend_py/models/susuario.py">
-# routes/susuarios.py (versión corregida)
-
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
-from passlib.context import CryptContext
-from models.susuario import create_usuario_sistema
-from routes.auth import require_admin
+from datetime import datetime
+from config.db import get_pool
 
-router = APIRouter()
-pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt_sha256", "bcrypt"], deprecated="auto")
+async def get_by_username(username: str) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT * FROM usuarios_sistema WHERE username = %s",
+                (username,)
+            )
+            return await cur.fetchone()
 
+async def create_usuario_sistema(data: dict) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """INSERT INTO usuarios_sistema
+                   (id, username, password_hash, rol, nombre, email, usuario_id, activo)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    data["id"], data["username"], data["password_hash"],
+                    data.get("rol", "gestor"), data.get("nombre"),
+                    data.get("email"), data.get("usuario_id"),
+                    data.get("activo", 1)
+                )
+            )
 
-@router.post("", status_code=201, dependencies=[Depends(require_admin)])
-async def crear(body: dict, current_admin: dict = Depends(require_admin)):
-    """
-    Crea un nuevo usuario del sistema. Solo accesible por administradores.
-    """
-    username = body.get("username")
-    password = body.get("password")
+async def count_usuarios_sistema() -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT COUNT(*) as total FROM usuarios_sistema")
+            row = await cur.fetchone()
+            return row["total"] if row else 0
 
-    if not username or not password:
-        raise HTTPException(status_code=400, detail="username y password son requeridos.")
-
-    # Validar que el rol solicitado sea válido (admin/gestor) y no permitir escalada
-    rol_solicitado = body.get("rol", "gestor")
-    if rol_solicitado not in ("admin", "gestor"):
-        raise HTTPException(status_code=400, detail="Rol inválido. Debe ser 'admin' o 'gestor'.")
-
-    try:
-        hashed = pwd_context.hash(password)
-        new_id = str(uuid.uuid4())
-        await create_usuario_sistema(
-            {
-                "id": new_id,
-                "username": username,
-                "password_hash": hashed,
-                "rol": rol_solicitado,
-                "nombre": body.get("nombre"),
-                "email": body.get("email"),
-                "usuario_id": body.get("usuario_id"),
-            }
-        )
-        return {
-            "id": new_id,
-            "username": username,
-            "rol": rol_solicitado,
-            "nombre": body.get("nombre"),
-            "email": body.get("email"),
-        }
-    except Exception as e:
-        if "Duplicate entry" in str(e) or "1062" in str(e):
-            raise HTTPException(status_code=409, detail="Ya existe un usuario con ese username.")
-        raise HTTPException(status_code=500, detail=str(e))
+async def update_ultimo_acceso(user_id: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE usuarios_sistema SET ultimo_acceso = NOW() WHERE id = %s",
+                (user_id,)
+            )
 </file>
 
 <file path="backend_py/models/usuario.py">
@@ -2079,8 +2099,7 @@ from fastapi.responses import Response
 from models.asignacion import AsignacionModel
 from models.documento import DocumentoModel
 from models.equipo import EquipoModel
-from routes.auth import get_current_user
-from routes.equipos import _generar_y_registrar_hoja_vida, _requiere_hoja_vida
+from dependencies import get_current_user   # ✅ Correcto (ya existe en dependencies.py)from routes.equipos import _generar_y_registrar_hoja_vida, _requiere_hoja_vida
 from utils.accesorios import normalizar_accesorios_entregados
 from utils.acta_entrega_pdf import generar_acta_entrega_pdf
 from utils.files import safe_filename
@@ -3757,47 +3776,37 @@ async def remove(id: str):
 </file>
 
 <file path="backend_py/routes/susuarios.py">
-import uuid
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from passlib.context import CryptContext
+import uuid
+from dependencies import require_admin
 from models.susuario import create_usuario_sistema
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt_sha256", "bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-
-@router.post("", status_code=201)
-async def crear(body: dict):
+@router.post("", status_code=201, dependencies=[Depends(require_admin)])
+async def crear_usuario_sistema_endpoint(body: dict, current_admin: dict = Depends(require_admin)):
     username = body.get("username")
     password = body.get("password")
-
     if not username or not password:
-        raise HTTPException(status_code=400, detail="username y password son requeridos.")
-
+        raise HTTPException(status_code=400, detail="username y password requeridos")
     try:
         hashed = pwd_context.hash(password)
         new_id = str(uuid.uuid4())
-        await create_usuario_sistema(
-            {
-                "id": new_id,
-                "username": username,
-                "password_hash": hashed,
-                "rol": body.get("rol", "gestor"),
-                "nombre": body.get("nombre"),
-                "email": body.get("email"),
-                "usuario_id": body.get("usuario_id"),
-            }
-        )
-        return {
+        await create_usuario_sistema({
             "id": new_id,
             "username": username,
+            "password_hash": hashed,
             "rol": body.get("rol", "gestor"),
             "nombre": body.get("nombre"),
             "email": body.get("email"),
-        }
+            "usuario_id": body.get("usuario_id"),
+        })
+        return {"id": new_id, "username": username, "rol": body.get("rol", "gestor")}
     except Exception as e:
-        if "Duplicate entry" in str(e) or "1062" in str(e):
-            raise HTTPException(status_code=409, detail="Ya existe un usuario con ese username.")
+        if "Duplicate" in str(e):
+            raise HTTPException(status_code=409, detail="Usuario ya existe")
         raise HTTPException(status_code=500, detail=str(e))
 </file>
 
@@ -11544,151 +11553,125 @@ export function LoginPage() {
 </file>
 
 <file path="frontend/src/views/pages/reportes/ReportesPage.tsx">
-// CONTROLLER: Reportes
-// Genera los datos para los reportes exportables — datos desde la API REST.
+// VIEW: Página Reportes – exporta un componente React, no un hook
+import { useReportesController } from '../../../controllers/useReportesController';
+import { Card, Button, Table, Th, Td, Badge } from '../../components/ui/index';
+import { Download, FileSpreadsheet, FileText, Printer } from 'lucide-react';
 
-import { useMemo, useEffect, useCallback, useState } from 'react';
-import { useEquiposStore } from '../../../models/stores/useEquiposStore';
-import { useUsuariosStore } from '../../../models/stores/useUsuariosStore';
-import { useAsignacionesStore } from '../../../models/stores/useAsignacionesStore';
-import { useDocumentosStore } from '../../../models/stores/useAccesoriosStore';
-import { equiposApi, usuariosApi, asignacionesApi, documentosApi } from '../../../services/api';
+export function ReportesPage() {
+  const { reporteInventario, reporteSinDocs, reporteHistorial, exportarCSV, loading, error } = useReportesController();
 
-// ─── Helper para escapar valores CSV según RFC 4180 ─────────────────────────
-function escapeCSV(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  
-  let str = String(value);
-  
-  // Si contiene comillas dobles, duplicarlas
-  if (str.includes('"')) {
-    str = str.replace(/"/g, '""');
-  }
-  
-  // Si contiene comas, saltos de línea o comillas dobles, envolver entre comillas dobles
-  if (str.includes(',') || str.includes('\n') || str.includes('\r') || str.includes('"')) {
-    str = `"${str}"`;
-  }
-  
-  return str;
-}
+  const handleExportInventario = () => exportarCSV(reporteInventario, 'inventario_completo');
+  const handleExportSinDocs = () => exportarCSV(reporteSinDocs, 'equipos_sin_documentos');
+  const handleExportHistorial = () => exportarCSV(reporteHistorial, 'historial_asignaciones');
 
-export function useReportesController() {
-  const { equipos, setEquipos } = useEquiposStore();
-  const { usuarios, setUsuarios } = useUsuariosStore();
-  const { asignaciones, setAsignaciones } = useAsignacionesStore();
-  const { documentos, setDocumentos } = useDocumentosStore();
+  if (loading) return <div className="p-8 text-center text-slate-500">Cargando reportes...</div>;
+  if (error) return <div className="p-8 text-center text-red-600">Error: {error}</div>;
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="space-y-8">
+      <h1 className="text-2xl font-bold text-slate-800">Reportes</h1>
 
-  // ── Carga inicial (sin cambios) ──────────────────────────────────────────
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [eqRes, usrRes, asigRes, docRes] = await Promise.all([
-        equiposApi.getAll(),
-        usuariosApi.getAll(),
-        asignacionesApi.getAll(),
-        documentosApi.getAll(),
-      ]);
-      setEquipos(eqRes.data);
-      setUsuarios(usrRes.data);
-      setAsignaciones(asigRes.data);
-      setDocumentos(docRes.data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al cargar datos para reportes.');
-    } finally {
-      setLoading(false);
-    }
-  }, [setEquipos, setUsuarios, setAsignaciones, setDocumentos]);
+      {/* Botones de exportación */}
+      <div className="flex flex-wrap gap-3">
+        <Button icon={<Download size={16} />} onClick={handleExportInventario} className="bg-blue-600 text-white">
+          Exportar inventario (CSV)
+        </Button>
+        <Button icon={<FileSpreadsheet size={16} />} onClick={handleExportSinDocs} variant="outline">
+          Exportar equipos sin documentos
+        </Button>
+        <Button icon={<FileText size={16} />} onClick={handleExportHistorial} variant="outline">
+          Exportar historial de asignaciones
+        </Button>
+      </div>
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+      {/* Reporte: inventario completo */}
+      <Card>
+        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+          <h2 className="font-semibold text-slate-700">Inventario completo</h2>
+          <Badge variant="blue">{reporteInventario.length} equipos</Badge>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <thead>
+              <tr>
+                <Th>Placa</Th><Th>Serial</Th><Th>Tipo</Th><Th>Marca/Modelo</Th>
+                <Th>SO</Th><Th>Criticidad</Th><Th>Estado</Th><Th>Responsable</Th><Th>Área</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {reporteInventario.slice(0, 10).map((eq, idx) => (
+                <tr key={idx} className="hover:bg-slate-50">
+                  <Td className="font-mono font-medium">{eq.placa}</Td>
+                  <Td>{eq.serial}</Td>
+                  <Td>{eq.tipo}</Td>
+                  <Td>{eq.marca} {eq.modelo}</Td>
+                  <Td>{eq.so}</Td>
+                  <Td><Badge variant={eq.criticidad === 'Crítica' ? 'red' : 'gray'}>{eq.criticidad}</Badge></Td>
+                  <Td><Badge variant={eq.estado === 'Asignado' ? 'green' : 'blue'}>{eq.estado}</Badge></Td>
+                  <Td>{eq.responsable}</Td>
+                  <Td>{eq.area}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          {reporteInventario.length > 10 && (
+            <div className="p-3 text-center text-xs text-slate-400 border-t">
+              Mostrando 10 de {reporteInventario.length} registros
+            </div>
+          )}
+        </div>
+      </Card>
 
-  // ── Reporte: inventario completo (sin cambios) ───────────────────────────
-  const reporteInventario = useMemo(() => {
-    return equipos.map((e) => {
-      const asignacion = asignaciones.find((a) => a.equipo_id === e.id && a.estado === 'Activa');
-      const usuario = asignacion ? usuarios.find((u) => u.id === asignacion.usuario_id) : null;
-      return {
-        placa: e.placa,
-        serial: e.serial ?? '',
-        tipo: e.tipo_equipo,
-        marca: e.marca ?? '',
-        modelo: e.modelo ?? '',
-        so: e.sistema_operativo ?? '',
-        criticidad: e.criticidad,
-        confidencialidad: e.confidencialidad,
-        estado: e.estado,
-        responsable: usuario?.nombre ?? 'Sin asignar',
-        area: usuario?.area ?? '',
-        es_rentado: e.es_rentado ? 'Sí' : 'No',
-        fecha_registro: e.fecha_registro,
-      };
-    });
-  }, [equipos, asignaciones, usuarios]);
+      {/* Reporte: equipos sin documentos */}
+      <Card>
+        <div className="px-6 py-4 border-b border-slate-200">
+          <h2 className="font-semibold text-slate-700">Equipos sin acta o sin hoja de vida</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <thead><tr><Th>Placa</Th><Th>Tipo</Th><Th>Estado</Th><Th>Sin acta</Th><Th>Sin hoja de vida</Th></tr></thead>
+            <tbody>
+              {reporteSinDocs.map((eq, idx) => (
+                <tr key={idx}>
+                  <Td className="font-mono">{eq.placa}</Td>
+                  <Td>{eq.tipo}</Td>
+                  <Td>{eq.estado}</Td>
+                  <Td>{eq.sin_acta === 'Sí' ? <Badge variant="red">Sí</Badge> : <Badge variant="green">No</Badge>}</Td>
+                  <Td>{eq.sin_hoja_vida === 'Sí' ? <Badge variant="red">Sí</Badge> : <Badge variant="green">No</Badge>}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      </Card>
 
-  // ── Reporte: equipos sin documentos (sin cambios) ────────────────────────
-  const reporteSinDocs = useMemo(() => {
-    const equiposConActa = new Set(documentos.filter((d) => d.tipo === 'Acta').map((d) => d.equipo_id));
-    const equiposConHv = new Set(documentos.filter((d) => d.tipo === 'Hoja de vida').map((d) => d.equipo_id));
-    return equipos
-      .filter((e) => e.estado !== 'Baja')
-      .filter((e) => !equiposConActa.has(e.id) || !equiposConHv.has(e.id))
-      .map((e) => ({
-        placa: e.placa,
-        tipo: e.tipo_equipo,
-        estado: e.estado,
-        sin_acta: equiposConActa.has(e.id) ? 'No' : 'Sí',
-        sin_hoja_vida: equiposConHv.has(e.id) ? 'No' : 'Sí',
-      }));
-  }, [equipos, documentos]);
-
-  // ── Reporte: historial de asignaciones (sin cambios) ─────────────────────
-  const reporteHistorial = useMemo(() => {
-    return asignaciones.map((a) => {
-      const usuario = usuarios.find((u) => u.id === a.usuario_id);
-      const equipo = equipos.find((e) => e.id === a.equipo_id);
-      return {
-        equipo_placa: equipo?.placa ?? '',
-        equipo_tipo: equipo?.tipo_equipo ?? '',
-        usuario: usuario?.nombre ?? '',
-        area: usuario?.area ?? '',
-        fecha_asignacion: a.fecha_asignacion,
-        fecha_devolucion: a.fecha_devolucion ?? 'Activa',
-        estado: a.estado,
-      };
-    }).sort((a, b) => b.fecha_asignacion.localeCompare(a.fecha_asignacion));
-  }, [asignaciones, usuarios, equipos]);
-
-  // ─── Exportar a CSV (corregido: BOM + escape de comillas) ─────────────────
-  const exportarCSV = (datos: Record<string, string | number>[], nombreArchivo: string) => {
-    if (!datos.length) return;
-    
-    // Obtener cabeceras
-    const headers = Object.keys(datos[0]);
-    
-    // Construir filas aplicando escapeCSV a cada valor
-    const filas = datos.map((fila) =>
-      headers.map((header) => escapeCSV(fila[header])).join(',')
-    );
-    
-    // Unir cabeceras y filas
-    const csvContent = [headers.join(','), ...filas].join('\n');
-    
-    // Añadir BOM UTF-8 (carácter \uFEFF) para que Excel interprete bien las tildes
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${nombreArchivo}_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return { reporteInventario, reporteSinDocs, reporteHistorial, exportarCSV, loading, error };
+      {/* Reporte: historial de asignaciones */}
+      <Card>
+        <div className="px-6 py-4 border-b border-slate-200">
+          <h2 className="font-semibold text-slate-700">Historial de asignaciones</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <thead><tr><Th>Equipo</Th><Th>Tipo</Th><Th>Usuario</Th><Th>Área</Th><Th>Fecha asignación</Th><Th>Fecha devolución</Th><Th>Estado</Th></tr></thead>
+            <tbody>
+              {reporteHistorial.slice(0, 20).map((h, idx) => (
+                <tr key={idx}>
+                  <Td className="font-mono">{h.equipo_placa}</Td>
+                  <Td>{h.equipo_tipo}</Td>
+                  <Td>{h.usuario}</Td>
+                  <Td>{h.area}</Td>
+                  <Td>{h.fecha_asignacion}</Td>
+                  <Td>{h.fecha_devolucion}</Td>
+                  <Td><Badge variant={h.estado === 'Activa' ? 'green' : 'gray'}>{h.estado}</Badge></Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      </Card>
+    </div>
+  );
 }
 </file>
 
@@ -12445,6 +12428,321 @@ export default defineConfig({
     tailwindcss(),
   ],
 })
+</file>
+
+<file path="hola.html">
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Informe técnico unificado - Sistema de Inventarios ITAM</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background-color: #f0f2f5;
+            padding: 40px 20px;
+            line-height: 1.5;
+            color: #1e2a3a;
+        }
+        .document {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            border-radius: 12px;
+            padding: 40px 50px;
+        }
+        @media (max-width: 700px) {
+            .document {
+                padding: 20px;
+            }
+        }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: #0f3b5c;
+            border-left: 6px solid #1e6f9f;
+            padding-left: 20px;
+        }
+        .subtitulo {
+            color: #2c6e9e;
+            margin-bottom: 30px;
+            font-size: 16px;
+            border-bottom: 1px solid #cbd5e1;
+            padding-bottom: 10px;
+        }
+        h2 {
+            font-size: 22px;
+            margin-top: 30px;
+            margin-bottom: 16px;
+            background-color: #eef2ff;
+            padding: 6px 12px;
+            border-radius: 8px;
+            color: #1e3a5f;
+        }
+        h3 {
+            font-size: 18px;
+            margin-top: 24px;
+            margin-bottom: 10px;
+            color: #2c3e66;
+            border-left: 3px solid #3b82f6;
+            padding-left: 12px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        th {
+            background-color: #e9f0fc;
+            text-align: left;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+        }
+        td {
+            border: 1px solid #cbd5e1;
+            padding: 8px 12px;
+            vertical-align: top;
+        }
+        .badge {
+            display: inline-block;
+            background-color: #fee2e2;
+            color: #b91c1c;
+            font-size: 12px;
+            font-weight: bold;
+            padding: 2px 8px;
+            border-radius: 20px;
+        }
+        .highlight {
+            background-color: #fff3e0;
+        }
+        ul, ol {
+            margin-left: 24px;
+            margin-top: 8px;
+            margin-bottom: 16px;
+        }
+        li {
+            margin: 6px 0;
+        }
+        .warning-box {
+            background-color: #fff8e7;
+            border-left: 4px solid #f59e0b;
+            padding: 12px 16px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .success-box {
+            background-color: #e6f7ec;
+            border-left: 4px solid #10b981;
+            padding: 12px 16px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 12px;
+            color: #6c7a8a;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 20px;
+        }
+        .page-break {
+            page-break-before: always;
+        }
+        code {
+            background: #f1f5f9;
+            padding: 2px 5px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+<div class="document">
+    <h1>📋 INFORME TÉCNICO UNIFICADO</h1>
+    <div class="subtitulo">Sistema de Inventarios / ITAM – Backend FastAPI + React/TypeScript<br>
+    Auditoría funcional, seguridad, base de datos y roadmap de evolución<br>
+    <strong>Fecha:</strong> 06 de junio de 2026</div>
+
+    <h2>1. Resumen ejecutivo</h2>
+    <p>El sistema tiene una base funcional avanzada (autenticación, activos, usuarios, asignaciones, documentos, suministros, licencias, dashboard y generación PDF). <strong>Sin embargo, presenta errores críticos</strong> que impiden el arranque estable o generan riesgos de seguridad. Antes de añadir nuevas funcionalidades, se debe ejecutar una <strong>fase de estabilización inmediata</strong>.</p>
+    <ul>
+        <li>❌ El backend no arranca si falta <code>JWT_SECRET</code> en <code>.env</code>.</li>
+        <li>❌ <code>models/susuario.py</code> contiene código de rutas en lugar de modelo → errores de importación.</li>
+        <li>❌ La página de reportes (<code>ReportesPage</code>) exporta un hook, no un componente → falla de compilación.</li>
+        <li>❌ Documentos PDF en <code>/uploads/</code> están expuestos públicamente sin autenticación.</li>
+        <li>❌ El acta de entrega puede descargarse como plantilla en blanco (sin datos de la asignación).</li>
+        <li>⚠️ Migraciones desordenadas, falta de normalización en usuarios múltiples, columna <code>sede</code> ausente.</li>
+    </ul>
+    <p>Una vez corregidos estos bloqueos, se recomienda seguir el roadmap por fases (seguridad, base de datos, flujo documental y funciones de valor).</p>
+
+    <h2>2. Diagnóstico general</h2>
+    <table>
+        <thead><tr><th>Área</th><th>Estado actual</th><th>Riesgo</th><th>Acción principal</th></tr</thead>
+        <tbody>
+            <tr><td>Backend</td><td>Funcional pero con errores de arranque</td><td><span class="badge">Alto</span></td><td>Definir JWT_SECRET; separar modelo susuario de rutas</td></tr>
+            <tr><td>Frontend</td><td>Interfaz avanzada, ReportesPage rota</td><td><span class="badge">Alto</span></td><td>Reconstruir ReportesPage como vista</td></tr>
+            <tr><td>Seguridad</td><td>Login implementado, uploads expuesto</td><td><span class="badge">Alto</span></td><td>Eliminar mount público /uploads, errores genéricos</td></tr>
+            <tr><td>Documentos</td><td>Generación PDF avanzada pero dependiente de plantilla</td><td><span class="badge">Alto</span></td><td>Forzar siempre generar_acta_entrega_pdf() y agregar pypdf</td></tr>
+            <tr><td>Base de datos</td><td>Migraciones parciales sin orden, usuarios_ids como JSON</td><td><span class="badge">Medio/Alto</span></td><td>Crear migración base numerada y tabla asignacion_usuarios</td></tr>
+            <tr><td>Escalabilidad</td><td>Filtros locales, carga completa</td><td>Medio</td><td>Paginación y filtros desde backend</td></tr>
+        </tbody>
+    </table>
+
+    <h2>3. Problemas críticos de corrección inmediata (orden sugerido)</h2>
+    <h3>3.1. Backend no arranca por falta de JWT_SECRET</h3>
+    <p><strong>Archivo:</strong> <code>routes/auth.py</code>. Se exige la variable pero no está en <code>.env</code>. <br>
+    <strong>Solución:</strong> Agregar <code>JWT_SECRET=clave_segura_larga</code> en <code>backend_py/.env</code> y excluir .env del repositorio.</p>
+
+    <h3>3.2. models/susuario.py mal estructurado</h3>
+    <p>Contiene <code>APIRouter</code> y lógica de rutas. Debe contener solo funciones de acceso a BD.<br>
+    <strong>Solución:</strong> Mover rutas a <code>routes/susuarios.py</code> y en <code>models/susuario.py</code> dejar: <code>get_by_username</code>, <code>create_usuario_sistema</code>, <code>count_usuarios_sistema</code>, <code>update_ultimo_acceso</code>.</p>
+
+    <h3>3.3. Falta la dependencia pypdf</h3>
+    <p><code>requirements.txt</code> no incluye <code>pypdf</code> pero <code>acta_entrega_pdf.py</code> lo importa.<br>
+    <strong>Solución:</strong> Añadir <code>pypdf==5.1.0</code> (o PyPDF2) y ejecutar <code>pip install -r requirements.txt</code>.</p>
+
+    <h3>3.4. Acta de entrega puede descargarse sin datos (plantilla en blanco)</h3>
+    <p><strong>Archivo:</strong> <code>routes/asignaciones.py</code>. Si detecta la plantilla, la devuelve tal cual.<br>
+    <strong>Solución:</strong> Forzar siempre <code>generar_acta_entrega_pdf()</code> para rellenar con los datos de la asignación.</p>
+
+    <h3>3.5. Script regenerate_acta.py con parámetro inexistente</h3>
+    <p><code>rellenar=True</code> no existe; debe ser <code>regenerar=True</code>.<br>
+    <strong>Solución:</strong> Cambiar el argumento en <code>scripts/regenerate_acta.py</code>.</p>
+
+    <h3>3.6. Página de reportes rota (exporta hook en lugar de componente)</h3>
+    <p><code>views/pages/reportes/ReportesPage.tsx</code> contiene el controlador.<br>
+    <strong>Solución:</strong> Reconstruir la vista que importe <code>useReportesController</code> desde el controlador.</p>
+
+    <h3>3.7. Inconsistencia de estado: "Desposicion" vs "Disposición"</h3>
+    <p>La migración usa <code>'Desposicion'</code>, el frontend usa <code>'Disposicion'</code>.<br>
+    <strong>Solución:</strong> Unificar a <code>'Disposición'</code> en BD, tipos TypeScript y formularios.</p>
+
+    <h2>4. Seguridad y protección de información</h2>
+    <table>
+        <thead><tr><th>Hallazgo</th><th>Riesgo</th><th>Solución</th></tr></thead>
+        <tbody>
+            <tr><td><code>.env</code> dentro del repositorio</td><td>Exposición de secretos</td><td>Excluir .env y mantener solo .env.example</td></tr>
+            <tr><td>PDFs en <code>/uploads/</code> servidos por StaticFiles</td><td>Descarga pública sin autenticación</td><td>Eliminar <code>app.mount("/uploads")</code> y servir solo mediante <code>/api/documentos/{id}/download</code></td></tr>
+            <tr><td>Errores internos de MySQL devueltos al cliente</td><td>Filtración de estructura de BD</td><td>Usar global_exception_handler (ya existe) con mensaje genérico</td></tr>
+            <tr><td>Falta de protección <code>require_admin</code> en endpoints de usuarios sistema</td><td>Escalada de privilegios</td><td>Aplicar <code>dependencies=[Depends(require_admin)]</code> en <code>routes/susuarios.py</code></td></tr>
+        </tbody>
+    </table>
+
+    <div class="warning-box">
+        ⚠️ <strong>Acción prioritaria:</strong> Eliminar el mount de <code>/uploads</code> en <code>main.py</code> y ajustar el frontend para descargar documentos mediante el endpoint autenticado.
+    </div>
+
+    <h2>5. Base de datos y migraciones</h2>
+    <h3>5.1. Problemas identificados</h3>
+    <ul>
+        <li>No existe migración <strong>base</strong> que cree todas las tablas principales.</li>
+        <li>Las migraciones no tienen numeración secuencial → <code>run_migrations.py</code> ejecuta en orden alfabético, riesgo de fallo.</li>
+        <li>Columna <code>sede</code> en <code>usuarios</code> se maneja con <code>try/except</code> pero nunca se agregó formalmente.</li>
+        <li><code>usuarios_ids</code> como <code>LONGTEXT JSON</code> en asignaciones → dificulta consultas y auditoría.</li>
+    </ul>
+    <h3>5.2. Soluciones recomendadas</h3>
+    <ul>
+        <li>Crear <code>001_create_base_tables.sql</code> con todas las tablas (equipos, usuarios, asignaciones, accesorios, documentos, etc.).</li>
+        <li>Renombrar migraciones existentes con prefijos <code>002_*</code>, <code>003_*</code> según orden lógico.</li>
+        <li>Ejecutar migración específica para agregar <code>sede</code>: <code>ALTER TABLE usuarios ADD COLUMN sede VARCHAR(150) DEFAULT NULL;</code></li>
+        <li>Crear tabla puente <code>asignacion_usuarios</code> en lugar del campo JSON.</li>
+    </ul>
+
+    <h2>6. Mejoras por módulo (adicionales a correcciones)</h2>
+    <h3>6.1. Activos</h3>
+    <ul>
+        <li>Separar <code>estado</code> operativo de <code>es_rentado</code>.</li>
+        <li>Historial de cambios del activo (tabla <code>historial_equipos</code>).</li>
+        <li>Proceso de baja controlada con motivo, fecha, responsable y documento soporte.</li>
+        <li>Campos de garantía y generación de código QR por placa.</li>
+    </ul>
+    <h3>6.2. Asignaciones</h3>
+    <ul>
+        <li>Flujo formal: crear asignación → generar acta → firmar acta (digital) → registrar devolución.</li>
+        <li>Sincronizar estado de accesorios al editar asignación (no solo al crear/devolver).</li>
+        <li>Generar acta de devolución con estado físico y accesorios faltantes.</li>
+    </ul>
+    <h3>6.3. Documentos</h3>
+    <ul>
+        <li>Previsualización de PDF.</li>
+        <li>Estados del documento: pendiente, generado, firmado, validado, vencido.</li>
+        <li>Control de versiones estricto.</li>
+    </ul>
+    <h3>6.4. Suministros y licencias</h3>
+    <ul>
+        <li>Kardex de movimientos (entradas/salidas) para suministros físicos.</li>
+        <li>Alertas de stock bajo.</li>
+        <li>Vista independiente de licencias de software con control de vencimiento.</li>
+    </ul>
+    <h3>6.5. Dashboard y reportes</h3>
+    <ul>
+        <li>Centralizar KPIs en backend.</li>
+        <li>Exportar a CSV, Excel y PDF con filtros previos.</li>
+        <li>Reportes predefinidos: inventario, activos asignados, equipos sin documentos, mantenimientos, bajas, etc.</li>
+    </ul>
+
+    <h2>7. Funciones nuevas recomendadas (valor estratégico)</h2>
+    <table>
+        <thead><tr><th>Función</th><th>Aporte</th><th>Prioridad</th></tr></thead>
+        <tbody>
+            <tr><td>Código QR por activo</td><td>Consulta rápida desde celular, etiqueta física</td><td>Alta</td></tr>
+            <tr><td>Firma digital en actas (entrega y devolución)</td><td>Elimina papel, formaliza el proceso</td><td>Alta</td></tr>
+            <tr><td>Acta de devolución</td><td>Cierra el ciclo documental</td><td>Alta</td></tr>
+            <tr><td>Historial de mantenimiento (tabla mantenimientos)</td><td>Control preventivo/correctivo real</td><td>Alta</td></tr>
+            <tr><td>Alertas automáticas (correo/in-app)</td><td>Vencimientos, stock bajo</td><td>Alta</td></tr>
+            <tr><td>Auditoría de acciones (audit_log)</td><td>Trazabilidad de cambios</td><td>Alta</td></tr>
+            <tr><td>Roles y permisos reales (Admin, Gestor, Técnico, Consulta, Auditor)</td><td>Seguridad y delegación</td><td>Alta</td></tr>
+        </tbody>
+    </table>
+
+    <h2>8. Roadmap por fases</h2>
+    <table>
+        <thead><tr><th>Fase</th><th>Objetivo</th><th>Acciones principales</th><th>Resultado esperado</th></tr></thead>
+        <tbody>
+            <tr><td><strong>Fase 1</strong><br>Reparación urgente</td><td>Que el sistema arranque y compile</td><td>JWT_SECRET, models/susuario.py, pypdf, acta real, ReportesPage, unificar Disposición</td><td>Sistema estable y desplegable</td></tr>
+            <tr><td><strong>Fase 2</strong><br>Seguridad y base de datos</td><td>Proteger documentos y normalizar BD</td><td>Eliminar mount /uploads, migraciones numeradas, tabla asignacion_usuarios, columna sede</td><td>Datos seguros y consistentes</td></tr>
+            <tr><td><strong>Fase 3</strong><br>Flujo documental profesional</td><td>Acta correcta + devolución + firma</td><td>Generar acta siempre con datos, acta de devolución, campo firma, estados del documento</td><td>Trazabilidad documental completa</td></tr>
+            <tr><td><strong>Fase 4</strong><br>Funciones de alto valor</td><td>QR, mantenimiento, alertas, Kardex, reportes avanzados</td><td>Implementar módulos según prioridad</td><td>Sistema profesional y escalable</td></tr>
+        </tbody>
+    </table>
+
+    <div class="success-box">
+        ✅ <strong>Recomendación final:</strong> No desarrollar nuevas funcionalidades (QR, firma, etc.) hasta completar las Fases 1 y 2. Aplicar correcciones incrementalmente, validar con <code>npm run build</code> y pruebas de generación PDF.
+    </div>
+
+    <h2>9. Plan de acción resumido (próxima semana)</h2>
+    <table>
+        <thead><tr><th>#</th><th>Tarea</th><th>Responsable</th><th>Estimación</th></tr></thead>
+        <tbody>
+            <tr><td>1</td><td>Agregar JWT_SECRET a .env y ajustar auth.py</td><td>Backend</td><td>15 min</td></tr>
+            <tr><td>2</td><td>Separar models/susuario.py (solo modelo) y unificar rutas en routes/susuarios.py</td><td>Backend</td><td>2h</td></tr>
+            <tr><td>3</td><td>Añadir pypdf a requirements.txt y probar generación de acta</td><td>Backend</td><td>15 min</td></tr>
+            <tr><td>4</td><td>Modificar routes/asignaciones.py para que siempre use generar_acta_entrega_pdf</td><td>Backend</td><td>1h</td></tr>
+            <tr><td>5</td><td>Corregir regenerate_acta.py (regenerar=True)</td><td>Backend</td><td>10 min</td></tr>
+            <tr><td>6</td><td>Reconstruir ReportesPage.tsx como componente visual</td><td>Frontend</td><td>1h</td></tr>
+            <tr><td>7</td><td>Eliminar app.mount("/uploads") y ajustar frontend para usar endpoint download</td><td>Ambos</td><td>2h</td></tr>
+            <tr><td>8</td><td>Unificar estado "Disposición" en BD, frontend y migraciones</td><td>Ambos</td><td>30 min</td></tr>
+            <tr><td>9</td><td>Crear migración base numerada y ejecutarla en entorno de prueba</td><td>Backend</td><td>2h</td></tr>
+            <tr><td>10</td><td>Agregar columna sede mediante migración</td><td>Backend</td><td>10 min</td></tr>
+        </tbody>
+    </table>
+
+    <footer>
+        Informe generado para revisión técnica – Basado en auditoría de código y documento PDF de mejoras.<br>
+        Sistema de Inventarios ITAM – 06 de junio de 2026
+    </footer>
+</div>
+</body>
+</html>
 </file>
 
 <file path="package.json">

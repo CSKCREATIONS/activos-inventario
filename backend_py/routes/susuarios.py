@@ -8,11 +8,20 @@ router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 @router.post("", status_code=201, dependencies=[Depends(require_admin)])
-async def crear_usuario_sistema_endpoint(body: dict, current_admin: dict = Depends(require_admin)):
+async def crear_usuario_sistema_endpoint(
+    body: dict,
+    current_admin: dict = Depends(require_admin)
+):
     username = body.get("username")
     password = body.get("password")
     if not username or not password:
         raise HTTPException(status_code=400, detail="username y password requeridos")
+    
+    # Validar rol permitido (evitar escalada)
+    rol = body.get("rol", "gestor")
+    if rol not in ("admin", "gestor"):
+        raise HTTPException(status_code=400, detail="Rol debe ser 'admin' o 'gestor'")
+    
     try:
         hashed = pwd_context.hash(password)
         new_id = str(uuid.uuid4())
@@ -20,13 +29,19 @@ async def crear_usuario_sistema_endpoint(body: dict, current_admin: dict = Depen
             "id": new_id,
             "username": username,
             "password_hash": hashed,
-            "rol": body.get("rol", "gestor"),
+            "rol": rol,
             "nombre": body.get("nombre"),
             "email": body.get("email"),
             "usuario_id": body.get("usuario_id"),
         })
-        return {"id": new_id, "username": username, "rol": body.get("rol", "gestor")}
+        return {
+            "id": new_id,
+            "username": username,
+            "rol": rol,
+            "nombre": body.get("nombre"),
+            "email": body.get("email"),
+        }
     except Exception as e:
-        if "Duplicate" in str(e):
-            raise HTTPException(status_code=409, detail="Usuario ya existe")
+        if "Duplicate entry" in str(e) or "1062" in str(e):
+            raise HTTPException(status_code=409, detail="El nombre de usuario ya existe")
         raise HTTPException(status_code=500, detail=str(e))
