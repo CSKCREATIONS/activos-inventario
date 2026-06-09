@@ -6,7 +6,7 @@ interface SistemaUsuario {
   username: string;
   nombre?: string;
   email?: string;
-  rol: 'admin' | 'gestor';
+  rol: 'admin' | 'gestor' | 'tecnico' | 'solo_lectura';  
   activo: boolean;
   ultimo_acceso?: string; 
 }
@@ -49,6 +49,16 @@ export function useAdminController() {
     }
   };
 
+  const cambiarPassword = async (userId: string, newPassword: string) => {
+    try {
+        await susuariosApi.cambiarPassword(userId, { password: newPassword });
+        return true;
+    } catch (err) {
+        setError(err instanceof Error ? err.message : 'Error al cambiar contraseña');
+        throw err;
+    }
+  };
+
   const eliminarUsuario = async (id: string) => {
     try {
       await susuariosApi.remove(id);
@@ -61,6 +71,6 @@ export function useAdminController() {
 
   useEffect(() => { fetchUsuarios(); }, []);
 
-  return { usuarios, loading, error, crearUsuario, actualizarUsuario, eliminarUsuario, refetch: fetchUsuarios };
+  return { usuarios, loading, error, crearUsuario, actualizarUsuario, eliminarUsuario, cambiarPassword, refetch: fetchUsuarios };
 }
 export type { SistemaUsuario };

@@ -1,22 +1,24 @@
 // CONTROLLER: Asignaciones
 // Lógica de creación, devolución, búsqueda y validación de asignaciones — datos desde la API REST.
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useAsignacionesStore } from '../models/stores/useAsignacionesStore';
-import { useEquiposStore } from '../models/stores/useEquiposStore';
-import { useUsuariosStore } from '../models/stores/useUsuariosStore';
-import { asignacionesApi, equiposApi, usuariosApi } from '../services/api';
-import type { Asignacion, AccesorioAsignado } from '../models/types/index';
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { useAsignacionesStore } from "../models/stores/useAsignacionesStore";
+import { useEquiposStore } from "../models/stores/useEquiposStore";
+import { useUsuariosStore } from "../models/stores/useUsuariosStore";
+import { asignacionesApi, equiposApi, usuariosApi } from "../services/api";
+import type { Asignacion, AccesorioAsignado } from "../models/types/index";
 
 export function useAsignacionesController() {
-  const { asignaciones, setAsignaciones, updateAsignacion } = useAsignacionesStore();
+  const { asignaciones, setAsignaciones, updateAsignacion } =
+    useAsignacionesStore();
   const { equipos, setEquipos } = useEquiposStore();
   const { usuarios, setUsuarios } = useUsuariosStore();
 
-  const [busqueda, setBusqueda] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState<string>('');
+  const [busqueda, setBusqueda] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState<string>("");
   const [modalAbierto, setModalAbierto] = useState(false);
-  const [selectedAsignacion, setSelectedAsignacion] = useState<Asignacion | null>(null);
+  const [selectedAsignacion, setSelectedAsignacion] =
+    useState<Asignacion | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,13 +36,17 @@ export function useAsignacionesController() {
       setEquipos(eqRes.data);
       setUsuarios(usrRes.data);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al cargar asignaciones.');
+      setError(
+        err instanceof Error ? err.message : "Error al cargar asignaciones.",
+      );
     } finally {
       setLoading(false);
     }
   }, [setAsignaciones, setEquipos, setUsuarios]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   // ── Filtrado y enriquecimiento local ──────────────────────────────────────
   const asignacionesEnriquecidas = useMemo(() => {
@@ -67,15 +73,27 @@ export function useAsignacionesController() {
   }, [asignacionesEnriquecidas, busqueda, filtroEstado]);
 
   const equiposDisponibles = useMemo(() => {
-    return equipos.filter((e) => e.estado === 'Disponible');
+    return equipos.filter((e) => e.estado === "Disponible");
   }, [equipos]);
 
   // Agrupar accesorios disponibles por tipo
   const accesoriosDisponiblesAgrupados = useMemo(() => {
-    const accesorios = equipos.filter((e) => e.estado === 'Disponible');
+    const accesorios = equipos.filter((e) => e.estado === "Disponible");
     const tipos = new Set<string>();
     accesorios.forEach((a) => {
-      if (a.tipo_equipo && ['Monitor', 'Impresora', 'Escáner', 'Celular', 'Tablet', 'Router', 'Switch', 'UPS'].includes(a.tipo_equipo)) {
+      if (
+        a.tipo_equipo &&
+        [
+          "Monitor",
+          "Impresora",
+          "Escáner",
+          "Celular",
+          "Tablet",
+          "Router",
+          "Switch",
+          "UPS",
+        ].includes(a.tipo_equipo)
+      ) {
         tipos.add(a.tipo_equipo);
       }
     });
@@ -97,9 +115,12 @@ export function useAsignacionesController() {
   }) => {
     try {
       // Debug: log de datos siendo enviados
-      console.log('[Asignaciones] Datos siendo enviados al backend:', data);
-      console.log('[Asignaciones] Accesorios entregados:', data.accesorios_entregados);
-      
+      console.log("[Asignaciones] Datos siendo enviados al backend:", data);
+      console.log(
+        "[Asignaciones] Accesorios entregados:",
+        data.accesorios_entregados,
+      );
+
       const res = await asignacionesApi.create(data);
       // Re-fetch para sincronizar estado del equipo
       const [asigRes, eqRes] = await Promise.all([
@@ -114,26 +135,28 @@ export function useAsignacionesController() {
         // Si la respuesta de creación no trae id, buscarla entre las asignaciones recargadas
         let createdId: string | undefined = res?.data?.id;
         if (!createdId) {
-          const match = asigRes.data.find((a: any) => (
-            a.equipo_id === data.equipo_id &&
-            a.usuario_id === data.usuario_id &&
-            a.fecha_asignacion === data.fecha_asignacion &&
-            a.estado === 'Activa'
-          ));
+          const match = asigRes.data.find(
+            (a: any) =>
+              a.equipo_id === data.equipo_id &&
+              a.usuario_id === data.usuario_id &&
+              a.fecha_asignacion === data.fecha_asignacion &&
+              a.estado === "Activa",
+          );
           createdId = match?.id;
         }
         if (createdId) {
           const { blob } = await asignacionesApi.downloadActa(createdId, true);
           const url = URL.createObjectURL(blob);
-          window.open(url, '_blank');
+          window.open(url, "_blank");
         }
       } catch (err: unknown) {
         // No bloquear la acción principal si la generación/previsualización falla
-        console.error('Error al generar/previsualizar acta:', err);
+        console.error("Error al generar/previsualizar acta:", err);
       }
       return { error: null, data: res.data };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear asignación.';
+      const msg =
+        err instanceof Error ? err.message : "Error al crear asignación.";
       setError(msg);
       return { error: msg };
     }
@@ -149,13 +172,15 @@ export function useAsignacionesController() {
       setAsignaciones(asigRes.data);
       setEquipos(eqRes.data);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al registrar devolución.');
+      setError(
+        err instanceof Error ? err.message : "Error al registrar devolución.",
+      );
     }
   };
 
   const descargarBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = filename;
     a.click();
@@ -164,10 +189,13 @@ export function useAsignacionesController() {
 
   const descargarActa = async (asignacionId: string) => {
     try {
-      const { blob, filename } = await asignacionesApi.downloadActa(asignacionId, true);
+      const { blob, filename } = await asignacionesApi.downloadActa(
+        asignacionId,
+        true,
+      );
       descargarBlob(blob, filename);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al descargar acta.');
+      setError(err instanceof Error ? err.message : "Error al descargar acta.");
     }
   };
 
@@ -176,41 +204,54 @@ export function useAsignacionesController() {
       // Forzar regeneración para asegurarnos de mostrar el acta rellena
       const { blob } = await asignacionesApi.downloadActa(asignacionId, true);
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      window.open(url, "_blank");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al previsualizar acta.');
+      setError(
+        err instanceof Error ? err.message : "Error al previsualizar acta.",
+      );
     }
   };
 
   const descargarHojaVida = async (equipoId: string, placa?: string) => {
     try {
       const blob = await equiposApi.getHojaVidaPdf(equipoId);
-      const safePlaca = (placa ?? equipoId).toString().replaceAll(/[^a-zA-Z0-9_-]+/g, '_');
+      const safePlaca = (placa ?? equipoId)
+        .toString()
+        .replaceAll(/[^a-zA-Z0-9_-]+/g, "_");
       descargarBlob(blob, `hoja_vida_${safePlaca}.pdf`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al descargar hoja de vida.');
+      setError(
+        err instanceof Error ? err.message : "Error al descargar hoja de vida.",
+      );
     }
   };
 
-  const editarAsignacion = async (asignacionId: string, datosActualizados: Partial<any>) => {
+  const editarAsignacion = async (
+    asignacionId: string,
+    datosActualizados: Partial<any>,
+  ) => {
     try {
       setLoading(true);
       setError(null);
-      
-      const actualizada = await asignacionesApi.update(asignacionId, datosActualizados);
-      
+
+      const actualizada = await asignacionesApi.update(
+        asignacionId,
+        datosActualizados,
+      );
+
       // Actualizar en el store
       updateAsignacion(asignacionId, actualizada.data);
-      
+
       // Recargar todos los datos para sincronizar
       await fetchData();
-      
+
       setSelectedAsignacion(null);
       setModalAbierto(false);
-      
+
       return { success: true };
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Error al actualizar asignación.';
+      const errorMsg =
+        err instanceof Error ? err.message : "Error al actualizar asignación.";
       setError(errorMsg);
       return { error: errorMsg };
     } finally {
@@ -221,7 +262,8 @@ export function useAsignacionesController() {
   return {
     asignaciones: asignacionesFiltradas,
     totalAsignaciones: asignaciones.length,
-    asignacionesActivas: asignaciones.filter((a) => a.estado === 'Activa').length,
+    asignacionesActivas: asignaciones.filter((a) => a.estado === "Activa")
+      .length,
     busqueda,
     setBusqueda,
     filtroEstado,

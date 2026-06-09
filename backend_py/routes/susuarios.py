@@ -3,9 +3,11 @@ from passlib.context import CryptContext
 import uuid
 from dependencies import require_admin
 from models.susuario import create_usuario_sistema
+from passlib.context import CryptContext
+from config.db import get_pool
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 
 
@@ -15,6 +17,7 @@ from models.susuario import (
     get_usuario_sistema_by_id,
     update_usuario_sistema,
     delete_usuario_sistema
+    
 )
 
 @router.post("", status_code=201, dependencies=[Depends(require_admin)])
@@ -29,8 +32,8 @@ async def crear_usuario_sistema_endpoint(
     
     # Validar rol permitido (evitar escalada)
     rol = body.get("rol", "gestor")
-    if rol not in ("admin", "gestor"):
-        raise HTTPException(status_code=400, detail="Rol debe ser 'admin' o 'gestor'")
+    if rol not in ("admin", "gestor", "tecnico", "solo_lectura"):
+        raise HTTPException(status_code=400, detail="Rol inválido")
     
     try:
         hashed = pwd_context.hash(password)
@@ -71,9 +74,7 @@ async def obtener_usuario_sistema(user_id: str, current_admin: dict = Depends(re
 
 @router.put("/{user_id}", dependencies=[Depends(require_admin)])
 async def actualizar_usuario_sistema(user_id: str, body: dict, current_admin: dict = Depends(require_admin)):
-    # Validar que no se intente cambiar el rol del propio admin si es el único
     if body.get("rol") and current_admin.get("id") == user_id and body["rol"] != current_admin.get("rol"):
-        # Verificar si es el único admin
         users = await get_all_usuarios_sistema()
         admins = [u for u in users if u["rol"] == "admin" and u["activo"]]
         if len(admins) == 1:
@@ -82,6 +83,27 @@ async def actualizar_usuario_sistema(user_id: str, body: dict, current_admin: di
     if not success:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return {"message": "Usuario actualizado"}
+
+
+@router.put("/{user_id}/password", dependencies=[Depends(require_admin)])
+
+async def cambiar_password(
+    user_id: str,
+    body: dict,
+    current_admin: dict = Depends(require_admin)
+    
+):
+    
+    new_password = body.get("password")
+    if not new_password or len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Contraseña debe tener al menos 6 caracteres")
+    
+    hashed = pwd_context.hash(new_password)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("UPDATE usuarios_sistema SET password_hash = %s WHERE id = %s", (hashed, user_id))
+    return {"message": "Contraseña actualizada"}
 
 @router.delete("/{user_id}", dependencies=[Depends(require_admin)])
 async def eliminar_usuario_sistema(user_id: str, current_admin: dict = Depends(require_admin)):
