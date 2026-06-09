@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 from models.suministro import SuministroModel
 from utils.serializer import serialize
 
+
 router = APIRouter()
 
 TIPOS_VALIDOS  = {"Toner", "Licencia", "Cable", "Rollo", "Otro"}

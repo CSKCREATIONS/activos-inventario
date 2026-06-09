@@ -5,6 +5,8 @@ from dependencies import require_admin
 from models.susuario import create_usuario_sistema
 from passlib.context import CryptContext
 from config.db import get_pool
+from utils.audit import log_request
+
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt_sha256", "bcrypt"], deprecated="auto")
@@ -47,6 +49,9 @@ async def crear_usuario_sistema_endpoint(
             "email": body.get("email"),
             "usuario_id": body.get("usuario_id"),
         })
+
+        await log_request(request, current_admin["id"], "Creó usuario sistema", "Sistema", new_id, f"Username: {username}, Rol: {rol}")
+
         return {
             "id": new_id,
             "username": username,

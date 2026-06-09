@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from utils.audit import log_action
+
 
 from models.susuario import (
     get_by_username,
@@ -115,6 +117,13 @@ async def login(body: dict):
         "nombre": user.get("nombre") or user["username"],
     })
 
+    await log_action(
+    user_id=user["id"],
+    accion="Inicio de sesión",
+    modulo="Sistema",
+    detalle="Acceso desde {request.client.host if request.client else 'IP desconocida'}"
+    )
+
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -125,6 +134,8 @@ async def login(body: dict):
             "nombre": user.get("nombre") or user["username"],
             "email": user.get("email"),
         },
+
+    
     }
 
 

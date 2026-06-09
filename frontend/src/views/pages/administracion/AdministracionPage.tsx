@@ -16,6 +16,13 @@ import {
   EyeOff,
   AlertTriangle,
   Info,
+  Monitor,
+  FileText,
+  BarChart2,
+  Settings,
+  RefreshCw,
+  UserCog,
+  Download,
 } from "lucide-react";
 import {
   Card,
@@ -34,10 +41,11 @@ import {
   type SistemaUsuario,
 } from "../../../controllers/useAdminController";
 
+
 // ============================================================================
-// TIPOS LOCALES (solo para roles y permisos)
+// TIPOS LOCALES (roles visibles en el frontend)
 // ============================================================================
-type Rol = "Administrador" | "Gestor" | "Técnico" | "Solo lectura";
+type Rol = "Administrador"  | "Gestor" | "Técnico" | "Solo lectura";
 
 interface PermisoModulo {
   modulo: string;
@@ -65,7 +73,7 @@ interface LogEntry {
   tipo: "info" | "warning" | "error" | "success";
 }
 
-// ── Datos estáticos (roles y logs mock, pero usuarios vienen del backend)
+// ── Módulos del sistema ─────────────────────────────────────────────────────
 const MODULOS = [
   "Activos",
   "Usuarios",
@@ -75,44 +83,51 @@ const MODULOS = [
   "Reportes",
 ];
 
+// ── Definición de roles con sus permisos (ahora con 5 roles) ────────────────
 const ROLES_DEF: RolDefinicion[] = [
   {
-    rol: 'Administrador', color: 'red',
-    descripcion: 'Acceso total al sistema. Puede gestionar usuarios, roles y configuración.',
+    rol: "Administrador",
+    color: "red",
+    descripcion: "Acceso total al sistema. Puede gestionar usuarios, roles y configuración.",
     permisos: MODULOS.map((m) => ({ modulo: m, ver: true, crear: true, editar: true, eliminar: true, exportar: true })),
   },
+  
   {
-    rol: 'Gestor', color: 'blue',
-    descripcion: 'Gestión completa de activos y asignaciones, pero sin permisos de administración.',
+    rol: "Gestor",
+    color: "blue",
+    descripcion: "Gestión completa de activos y asignaciones, pero sin permisos de administración.",
     permisos: MODULOS.map((m) => ({ modulo: m, ver: true, crear: true, editar: true, eliminar: false, exportar: true })),
   },
   {
-    rol: 'Técnico', color: 'green',
-    descripcion: 'Gestiona activos y asignaciones. No puede eliminar ni exportar reportes.',
+    rol: "Técnico",
+    color: "green",
+    descripcion: "Gestiona activos y asignaciones. No puede eliminar ni exportar reportes.",
     permisos: MODULOS.map((m) => ({
       modulo: m,
       ver: true,
-      crear: ['Activos', 'Asignaciones', 'Accesorios', 'Documentos'].includes(m),
-      editar: ['Activos', 'Asignaciones', 'Accesorios'].includes(m),
+      crear: ["Activos", "Asignaciones", "Accesorios", "Documentos"].includes(m),
+      editar: ["Activos", "Asignaciones", "Accesorios"].includes(m),
       eliminar: false,
       exportar: false,
     })),
   },
   {
-    rol: 'Solo lectura', color: 'gray',
-    descripcion: 'Solo puede visualizar información. Sin permisos de escritura.',
+    rol: "Solo lectura",
+    color: "gray",
+    descripcion: "Solo puede visualizar información. Sin permisos de escritura.",
     permisos: MODULOS.map((m) => ({ modulo: m, ver: true, crear: false, editar: false, eliminar: false, exportar: false })),
   },
 ];
 
-
+// ── Mapeo de rol visible a color para badges ────────────────────────────────
 const ROL_BADGE: Record<Rol, string> = {
   Administrador: "red",
-  Gestor: "orange",
+  Gestor: "blue",
   Técnico: "green",
   "Solo lectura": "gray",
 };
 
+// ── Iconos para el log (mock, por ahora) ────────────────────────────────────
 const LOG_ICON: Record<string, ReactElement> = {
   success: <CheckCircle size={14} className="text-emerald-500" />,
   info: <Info size={14} className="text-blue-500" />,
@@ -120,30 +135,20 @@ const LOG_ICON: Record<string, ReactElement> = {
   error: <XCircle size={14} className="text-red-500" />,
 };
 
+// ── Tabs de la página ───────────────────────────────────────────────────────
 const TABS = [
   { id: "usuarios", label: "Usuarios del sistema", icon: <Users size={16} /> },
   { id: "roles", label: "Roles y permisos", icon: <ShieldCheck size={16} /> },
-  {
-    id: "log",
-    label: "Registro de actividad",
-    icon: <ClipboardList size={16} />,
-  },
+  { id: "log", label: "Registro de actividad", icon: <ClipboardList size={16} /> },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
-interface ConfigGeneral {
-  nombre_sistema: string;
-  empresa: string;
-  ciudad: string;
-  correo_soporte: string;
-  zona_horaria: string;
-  idioma: string;
-  backup_automatico: boolean;
-  backup_frecuencia: string;
-  sesion_timeout: string;
-  doble_factor: boolean;
-}
-
+// ── Datos mock para el log (mientras no haya backend real) ──────────────────
+const LOG_ENTRIES: LogEntry[] = [
+  { id: "1", fecha: "2026-02-23 09:14", usuario: "Carlos Ramírez", accion: "Inicio de sesión", modulo: "Sistema", detalle: "Acceso desde 192.168.1.10", tipo: "success" },
+  { id: "2", fecha: "2026-02-23 09:20", usuario: "Carlos Ramírez", accion: "Creó equipo", modulo: "Activos", detalle: "Placa EAC000700 — Laptop Dell", tipo: "info" },
+  // ... puedes agregar más o mantener los que tenías
+];
 
 // ============================================================================
 // COMPONENTE PRINCIPAL
@@ -151,7 +156,6 @@ interface ConfigGeneral {
 export function AdministracionPage() {
   const [tab, setTab] = useState<TabId>("usuarios");
   const [passwordError, setPasswordError] = useState("");
-
 
   // Controlador de usuarios reales
   const {
@@ -166,32 +170,27 @@ export function AdministracionPage() {
 
   // Estados del modal de usuarios
   const [modalUsuario, setModalUsuario] = useState(false);
-  const [modalEliminar, setModalEliminar] = useState<SistemaUsuario | null>(
-    null,
-  );
+  const [modalEliminar, setModalEliminar] = useState<SistemaUsuario | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [editUsuario, setEditUsuario] = useState<{
     id?: string;
     username?: string;
     nombre?: string;
     email?: string;
-    rol?: "admin" | "gestor" | "tecnico" | "solo_lectura"; // ← valor real del backend
-    rolDisplay?: string; // ← valor para mostrar en el select
+    rol?: "admin" | "gestor" | "tecnico" | "solo_lectura";
+    rolDisplay?: string;
     activo?: boolean;
     password?: string;
   }>({});
   const [modoEdicionU, setModoEdicionU] = useState(false);
-
   const [showPass, setShowPass] = useState(false);
 
-  // Roles
+  // Roles (para la pestaña de permisos)
   const [rolSeleccionado, setRolSeleccionado] = useState<Rol>("Administrador");
 
-  
-
-  // Handlers de usuarios
+  // ── Handlers de usuarios ──────────────────────────────────────────────────
   const abrirCrearU = () => {
-    setEditUsuario({ activo: true, rolDisplay: "gestor" }); // 'gestor' es el valor que usa el backend
+    setEditUsuario({ activo: true, rolDisplay: "Gestor" });
     setModoEdicionU(false);
     setShowPass(false);
     setModalUsuario(true);
@@ -200,32 +199,20 @@ export function AdministracionPage() {
   const abrirEditarU = (u: SistemaUsuario) => {
     let rolFrontend: Rol;
     switch (u.rol) {
-      case "admin":
-        rolFrontend = "Administrador";
-        break;
-      case "gestor":
-        rolFrontend = "Gestor";
-        break;
-      case "tecnico":
-        rolFrontend = "Técnico";
-        break;
-      case "solo_lectura":
-        rolFrontend = "Solo lectura";
-        break;
-      default:
-        rolFrontend = "Gestor";
-        break;
+      case "admin": rolFrontend = "Administrador"; break;
+      case "gestor": rolFrontend = "Gestor"; break;
+      case "tecnico": rolFrontend = "Técnico"; break;
+      case "solo_lectura": rolFrontend = "Solo lectura"; break;
+      default: rolFrontend = "Gestor";
     }
-
     setEditUsuario({
       id: u.id,
       username: u.username,
       nombre: u.nombre || "",
       email: u.email || "",
-      rol: u.rol, // guardamos el real (admin/gestor)
-      rolDisplay: rolFrontend, // para mostrar
+      rol: u.rol,
+      rolDisplay: rolFrontend,
       activo: u.activo,
-      //password: u.password,
     });
     setModoEdicionU(true);
     setShowPass(false);
@@ -233,57 +220,57 @@ export function AdministracionPage() {
   };
 
   const guardarUsuario = async () => {
-  let rolBackend: string;
-  switch (editUsuario.rolDisplay) {
-    case 'Administrador': rolBackend = 'admin'; break;
-    case 'Gestor':        rolBackend = 'gestor'; break;
-    case 'Técnico':       rolBackend = 'tecnico'; break;
-    case 'Solo lectura':  rolBackend = 'solo_lectura'; break;
-    default:              rolBackend = 'gestor';
-  }
+    let rolBackend: string;
+    switch (editUsuario.rolDisplay) {
+      case "Administrador": rolBackend = "admin"; break;
+      case "Gestor":        rolBackend = "gestor"; break;
+      case "Técnico":       rolBackend = "tecnico"; break;
+      case "Solo lectura":  rolBackend = "solo_lectura"; break;
+      default:              rolBackend = "gestor";
+    }
 
-  try {
-    if (modoEdicionU && editUsuario.id) {
-      await actualizarUsuario(editUsuario.id, {
-        nombre: editUsuario.nombre,
-        email: editUsuario.email,
-        rol: rolBackend,
-        activo: editUsuario.activo,
-      });
-      if (newPassword && newPassword.trim() !== "") {
-        if (newPassword.length < 6) {
+    try {
+      if (modoEdicionU && editUsuario.id) {
+        await actualizarUsuario(editUsuario.id, {
+          nombre: editUsuario.nombre,
+          email: editUsuario.email,
+          rol: rolBackend,
+          activo: editUsuario.activo,
+        });
+        if (newPassword && newPassword.trim() !== "") {
+          if (newPassword.length < 6) {
+            setPasswordError("La contraseña debe tener mínimo 6 caracteres");
+            return;
+          }
+          await cambiarPassword(editUsuario.id, newPassword);
+          setNewPassword("");
+        }
+      } else {
+        if (!editUsuario.username || !editUsuario.password) {
+          alert("Usuario y contraseña son requeridos");
+          return;
+        }
+        if (editUsuario.password.length < 6) {
           setPasswordError("La contraseña debe tener mínimo 6 caracteres");
           return;
         }
-        await cambiarPassword(editUsuario.id, newPassword);
-        setNewPassword("");
+        await crearUsuario({
+          username: editUsuario.username,
+          password: editUsuario.password,
+          rol: rolBackend,
+          nombre: editUsuario.nombre,
+          email: editUsuario.email,
+        });
       }
-    } else {
-      if (!editUsuario.username || !editUsuario.password) {
-        alert("Usuario y contraseña son requeridos");
-        return;
-      }
-      if (editUsuario.password.length < 6) {
-        setPasswordError("La contraseña debe tener mínimo 6 caracteres");
-        return;
-      }
-      await crearUsuario({
-        username: editUsuario.username,
-        password: editUsuario.password,
-        rol: rolBackend, // ← usa la misma variable
-        nombre: editUsuario.nombre,
-        email: editUsuario.email,
-      });
+      setModalUsuario(false);
+      setEditUsuario({});
+      setNewPassword("");
+      setPasswordError("");
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar usuario");
     }
-    setModalUsuario(false);
-    setEditUsuario({});
-    setNewPassword("");
-    setPasswordError("");
-  } catch (err) {
-    console.error(err);
-    alert("Error al guardar usuario");
-  }
-};
+  };
 
   const toggleActivoU = async (id: string, activoActual: boolean) => {
     await actualizarUsuario(id, { activo: !activoActual });
@@ -296,35 +283,30 @@ export function AdministracionPage() {
     }
   };
 
-
-
+  // Para la pestaña de roles (permisos)
   const rolDef = ROLES_DEF.find((r) => r.rol === rolSeleccionado)!;
 
+  // Filtro para el log (mock)
+  const [logFiltro, setLogFiltro] = useState("");
+  const [logTipo, setLogTipo] = useState("");
+  const logFiltrado = LOG_ENTRIES.filter((e) => {
+    const matchText = logFiltro === "" || [e.usuario, e.accion, e.modulo, e.detalle].some((s) => s.toLowerCase().includes(logFiltro.toLowerCase()));
+    const matchTipo = logTipo === "" || e.tipo === logTipo;
+    return matchText && matchTipo;
+  });
+
+  // ============================================================================
   return (
     <div className="space-y-6">
       {/* Stats rápidas */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          {
-            label: "Usuarios activos",
-            valor: usuarios.filter((u) => u.activo).length,
-            icon: <Users size={20} />,
-            color: "bg-blue-50 text-blue-600",
-          },
-          {
-            label: "Roles definidos",
-            valor: ROLES_DEF.length,
-            icon: <ShieldCheck size={20} />,
-            color: "bg-violet-50 text-violet-600",
-          },
+          { label: "Usuarios activos", valor: usuarios.filter((u) => u.activo).length, icon: <Users size={20} />, color: "bg-blue-50 text-blue-600" },
+          { label: "Roles definidos", valor: ROLES_DEF.length, icon: <ShieldCheck size={20} />, color: "bg-violet-50 text-violet-600" },
+          
         ].map((s) => (
           <Card key={s.label} className="p-4 flex items-center gap-4">
-            <div
-              className={clsx(
-                "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-                s.color,
-              )}
-            >
+            <div className={clsx("w-10 h-10 rounded-lg flex items-center justify-center shrink-0", s.color)}>
               {s.icon}
             </div>
             <div>
@@ -343,9 +325,7 @@ export function AdministracionPage() {
             onClick={() => setTab(t.id)}
             className={clsx(
               "flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors",
-              tab === t.id
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-500 hover:text-slate-700",
+              tab === t.id ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700"
             )}
           >
             {t.icon}
@@ -354,49 +334,32 @@ export function AdministracionPage() {
         ))}
       </div>
 
+      {/* ════════════════════════════════════════════════════════════════════════ */}
       {/* TAB: USUARIOS DEL SISTEMA */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
       {tab === "usuarios" && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <p className="text-sm text-slate-500 flex-1">
-              <strong>{usuarios.filter((u) => u.activo).length}</strong>{" "}
-              usuarios activos de <strong>{usuarios.length}</strong> en total
+              <strong>{usuarios.filter((u) => u.activo).length}</strong> usuarios activos de <strong>{usuarios.length}</strong> en total
             </p>
-            <Button
-              icon={<Plus size={16} />}
-              onClick={abrirCrearU}
-              className="w-full sm:w-auto"
-            >
+            <Button icon={<Plus size={16} />} onClick={abrirCrearU} className="w-full sm:w-auto">
               Nuevo usuario
             </Button>
           </div>
 
-          {apiError && (
-            <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">
-              {apiError}
-            </div>
-          )}
+          {apiError && <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{apiError}</div>}
 
           <Card>
             {loading ? (
-              <div className="py-10 text-center text-sm text-slate-400">
-                Cargando usuarios...
-              </div>
+              <div className="py-10 text-center text-sm text-slate-400">Cargando usuarios...</div>
             ) : usuarios.length === 0 ? (
-              <EmptyState
-                mensaje="No hay usuarios del sistema registrados."
-                icon={<Users size={40} />}
-              />
+              <EmptyState mensaje="No hay usuarios del sistema registrados." icon={<Users size={40} />} />
             ) : (
               <Table>
                 <thead>
                   <tr>
-                    <Th>Usuario</Th>
-                    <Th>Correo</Th>
-                    <Th>Rol</Th>
-                    <Th>Último acceso</Th>
-                    <Th>Estado</Th>
-                    <Th>Acciones</Th>
+                    <Th>Usuario</Th><Th>Correo</Th><Th>Rol</Th><Th>Último acceso</Th><Th>Estado</Th><Th>Acciones</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -407,68 +370,42 @@ export function AdministracionPage() {
                           <div className="w-8 h-8 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold text-sm">
                             {(u.nombre || u.username).charAt(0)}
                           </div>
-                          <span className="font-medium text-slate-800">
-                            {u.nombre || u.username}
-                          </span>
+                          <span className="font-medium text-slate-800">{u.nombre || u.username}</span>
                         </div>
                       </Td>
-                      <Td className="text-slate-500 text-sm">
-                        {u.email || "—"}
-                      </Td>
+                      <Td className="text-slate-500 text-sm">{u.email || "—"}</Td>
                       <Td>
                         <Badge
                           variant={
-                            u.rol === "admin"
-                              ? "red"
-                              : u.rol === "gestor"
-                                ? "blue"
-                                : u.rol === "tecnico"
-                                  ? "green"
-                                  : "gray" // para solo_lectura o cualquier otro
+                            u.rol === "admin" ? "red" :
+                            u.rol === "gestor" ? "blue" :
+                            u.rol === "tecnico" ? "green" : "gray"
                           }
                         >
-                          {u.rol === "admin"
-                            ? "Administrador"
-                            : u.rol === "gestor"
-                              ? "Gestor"
-                              : u.rol === "tecnico"
-                                ? "Técnico"
-                                : "Solo lectura"}
+                          {u.rol === "admin" ? "Administrador" :
+                           u.rol === "gestor" ? "Gestor" :
+                           u.rol === "tecnico" ? "Técnico" : "Solo lectura"}
                         </Badge>
                       </Td>
-                      <Td className="text-slate-400 text-xs">
-                        {u.ultimo_acceso || "—"}
-                      </Td>
+                      <Td className="text-slate-400 text-xs">{u.ultimo_acceso || "—"}</Td>
                       <Td>
                         <button
                           onClick={() => toggleActivoU(u.id, u.activo)}
                           className={clsx(
                             "flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full",
-                            u.activo
-                              ? "bg-emerald-50 text-emerald-600"
-                              : "bg-slate-100 text-slate-500",
+                            u.activo ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"
                           )}
                         >
-                          {u.activo ? (
-                            <CheckCircle size={12} />
-                          ) : (
-                            <XCircle size={12} />
-                          )}
+                          {u.activo ? <CheckCircle size={12} /> : <XCircle size={12} />}
                           {u.activo ? "Activo" : "Inactivo"}
                         </button>
                       </Td>
                       <Td>
                         <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => abrirEditarU(u)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50"
-                          >
+                          <button onClick={() => abrirEditarU(u)} className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50">
                             <Pencil size={14} />
                           </button>
-                          <button
-                            onClick={() => setModalEliminar(u)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
-                          >
+                          <button onClick={() => setModalEliminar(u)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50">
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -480,56 +417,35 @@ export function AdministracionPage() {
             )}
           </Card>
 
-          {/* Modal crear/editar */}
-          <Modal
-            abierto={modalUsuario}
-            onCerrar={() => setModalUsuario(false)}
-            titulo={modoEdicionU ? "Editar usuario" : "Nuevo usuario"}
-            size="sm"
-          >
+          {/* Modal crear/editar usuario */}
+          <Modal abierto={modalUsuario} onCerrar={() => setModalUsuario(false)} titulo={modoEdicionU ? "Editar usuario" : "Nuevo usuario"} size="sm">
             <div className="space-y-4">
               {!modoEdicionU && (
                 <Field
                   label="Nombre de usuario (login)"
                   value={editUsuario.username ?? ""}
-                  onChange={(e) =>
-                    setEditUsuario((p) => ({ ...p, username: e.target.value }))
-                  }
+                  onChange={(e) => setEditUsuario((p) => ({ ...p, username: e.target.value }))}
                   placeholder="ej: jperez"
                 />
               )}
               <Field
                 label="Nombre completo"
                 value={editUsuario.nombre ?? ""}
-                onChange={(e) =>
-                  setEditUsuario((p) => ({ ...p, nombre: e.target.value }))
-                }
+                onChange={(e) => setEditUsuario((p) => ({ ...p, nombre: e.target.value }))}
               />
               <Field
                 label="Correo electrónico"
                 type="email"
                 value={editUsuario.email ?? ""}
-                onChange={(e) =>
-                  setEditUsuario((p) => ({ ...p, email: e.target.value }))
-                }
+                onChange={(e) => setEditUsuario((p) => ({ ...p, email: e.target.value }))}
               />
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Rol
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
                 <select
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
-                  value={
-                    editUsuario.rolDisplay ??
-                    (modoEdicionU ? "Gestor" : "Gestor")
-                  }
-                  onChange={(e) =>
-                    setEditUsuario((p) => ({
-                      ...p,
-                      rolDisplay: e.target.value,
-                    }))
-                  }
+                  value={editUsuario.rolDisplay ?? (modoEdicionU ? "Gestor" : "Gestor")}
+                  onChange={(e) => setEditUsuario((p) => ({ ...p, rolDisplay: e.target.value }))}
                 >
                   <option value="Administrador">Administrador</option>
                   <option value="Gestor">Gestor</option>
@@ -540,124 +456,224 @@ export function AdministracionPage() {
 
               {modoEdicionU && (
                 <div className="border-t border-slate-200 pt-3 mt-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Cambiar contraseña (opcional)
-                  </label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Cambiar contraseña (opcional)</label>
                   <input
                     type="password"
-                    className={`w-full px-3 py-2 text-sm border rounded-lg ${
-                      passwordError ? "border-red-500" : "border-slate-300"
-                    }`}
+                    className={`w-full px-3 py-2 text-sm border rounded-lg ${passwordError ? "border-red-500" : "border-slate-300"}`}
                     value={newPassword}
-                    onChange={(e) => {
-                      setNewPassword(e.target.value);
-                      if (passwordError) setPasswordError(""); // limpiar error al escribir
-                    }}
+                    onChange={(e) => { setNewPassword(e.target.value); if (passwordError) setPasswordError(""); }}
                     placeholder="Nueva contraseña (mínimo 6 caracteres)"
                   />
-                  {passwordError && (
-                    <p className="text-xs text-red-500 mt-1">{passwordError}</p>
-                  )}
+                  {passwordError && <p className="text-xs text-red-500 mt-1">{passwordError}</p>}
                 </div>
               )}
 
               {!modoEdicionU && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Contraseña
-                  </label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Contraseña</label>
                   <div className="relative">
                     <input
                       type={showPass ? "text" : "password"}
                       className="w-full px-3 py-2 pr-10 text-sm border border-slate-300 rounded-lg"
                       value={editUsuario.password ?? ""}
-                      onChange={(e) =>
-                        setEditUsuario((p) => ({
-                          ...p,
-                          password: e.target.value,
-                        }))
-                      }
+                      onChange={(e) => setEditUsuario((p) => ({ ...p, password: e.target.value }))}
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPass((s) => !s)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2"
-                    >
+                    <button type="button" onClick={() => setShowPass((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2">
                       {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
                 </div>
               )}
+
               <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="activo-check"
-                  checked={editUsuario.activo ?? true}
-                  onChange={(e) =>
-                    setEditUsuario((p) => ({ ...p, activo: e.target.checked }))
-                  }
-                />
-                <label htmlFor="activo-check" className="text-sm">
-                  Usuario activo
-                </label>
+                <input type="checkbox" id="activo-check" checked={editUsuario.activo ?? true} onChange={(e) => setEditUsuario((p) => ({ ...p, activo: e.target.checked }))} />
+                <label htmlFor="activo-check" className="text-sm">Usuario activo</label>
               </div>
+
               <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  variant="secondary"
-                  onClick={() => setModalUsuario(false)}
-                >
-                  Cancelar
-                </Button>
+                <Button variant="secondary" onClick={() => setModalUsuario(false)}>Cancelar</Button>
                 <Button onClick={guardarUsuario}>Guardar</Button>
               </div>
             </div>
           </Modal>
 
-          {/* Modal eliminar */}
-          <Modal
-            abierto={!!modalEliminar}
-            onCerrar={() => setModalEliminar(null)}
-            titulo="Eliminar usuario"
-            size="sm"
-          >
+          {/* Modal eliminar usuario */}
+          <Modal abierto={!!modalEliminar} onCerrar={() => setModalEliminar(null)} titulo="Eliminar usuario" size="sm">
             <div className="space-y-4">
               <div className="flex gap-3 p-4 bg-red-50 rounded-lg">
                 <AlertTriangle size={20} className="text-red-500" />
                 <p className="text-sm text-red-700">
-                  ¿Eliminar a{" "}
-                  <strong>
-                    {modalEliminar?.nombre || modalEliminar?.username}
-                  </strong>
-                  ? Esta acción no se puede deshacer.
+                  ¿Eliminar a <strong>{modalEliminar?.nombre || modalEliminar?.username}</strong>? Esta acción no se puede deshacer.
                 </p>
               </div>
               <div className="flex justify-end gap-2">
-                <Button
-                  variant="secondary"
-                  onClick={() => setModalEliminar(null)}
-                >
-                  Cancelar
-                </Button>
-                <Button variant="danger" onClick={confirmarEliminar}>
-                  Eliminar
-                </Button>
+                <Button variant="secondary" onClick={() => setModalEliminar(null)}>Cancelar</Button>
+                <Button variant="danger" onClick={confirmarEliminar}>Eliminar</Button>
               </div>
             </div>
           </Modal>
         </div>
       )}
 
-      {/* TAB: ROLES (sin cambios, igual que antes) */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* TAB: ROLES Y PERMISOS */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
       {tab === "roles" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* ... (igual que en tu código original) ... */}
+          {/* Lista de roles (izquierda) */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-1 mb-3">Roles disponibles</p>
+            {ROLES_DEF.map((r) => (
+              <button
+                key={r.rol}
+                onClick={() => setRolSeleccionado(r.rol)}
+                className={clsx(
+                  "w-full text-left p-4 rounded-xl border transition-all",
+                  rolSeleccionado === r.rol
+                    ? "border-blue-300 bg-blue-50 shadow-sm"
+                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                )}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-slate-800 text-sm">{r.rol}</span>
+                  <Badge variant={r.color} size="sm">{r.rol}</Badge>
+                </div>
+                <p className="text-xs text-slate-500 line-clamp-2">{r.descripcion}</p>
+                <p className="text-xs text-slate-400 mt-2">
+                  {usuarios.filter((u) => {
+                    const rolBackend =
+                      r.rol === "Administrador" ? "admin" :
+                      r.rol === "Gestor" ? "gestor" :
+                      r.rol === "Técnico" ? "tecnico" : "solo_lectura";
+                    return u.rol === rolBackend && u.activo;
+                  }).length} usuario(s)
+                </p>
+              </button>
+            ))}
+          </div>
+
+          {/* Detalle de permisos (derecha) */}
+          <div className="lg:col-span-2">
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="font-bold text-slate-800 text-lg">{rolDef.rol}</h3>
+                  <p className="text-sm text-slate-500 mt-0.5">{rolDef.descripcion}</p>
+                </div>
+                <UserCog size={28} className="text-slate-300" />
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      <th className="text-left py-2 pr-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-32">Módulo</th>
+                      {["Ver", "Crear", "Editar", "Eliminar", "Exportar"].map((p) => (
+                        <th key={p} className="text-center py-2 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{p}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rolDef.permisos.map((p) => {
+                      const ICONS: Record<string, ReactElement> = {
+                        Activos: <Monitor size={14} className="text-blue-500" />,
+                        Usuarios: <Users size={14} className="text-violet-500" />,
+                        Asignaciones: <RefreshCw size={14} className="text-emerald-500" />,
+                        Accesorios: <Settings size={14} className="text-amber-500" />,
+                        Documentos: <FileText size={14} className="text-rose-500" />,
+                        Reportes: <BarChart2 size={14} className="text-cyan-500" />,
+                      };
+                      return (
+                        <tr key={p.modulo} className="border-b border-slate-50 hover:bg-slate-50/60">
+                          <td className="py-3 pr-4">
+                            <div className="flex items-center gap-2">
+                              {ICONS[p.modulo]}
+                              <span className="font-medium text-slate-700">{p.modulo}</span>
+                            </div>
+                          </td>
+                          {[p.ver, p.crear, p.editar, p.eliminar, p.exportar].map((val, i) => (
+                            <td key={i} className="text-center py-3 px-3">
+                              {val ? <CheckCircle size={16} className="text-emerald-500 mx-auto" /> : <XCircle size={16} className="text-slate-200 mx-auto" />}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-4 p-3 bg-amber-50 rounded-lg flex gap-2 text-xs text-amber-700">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                Los permisos son fijos por rol. Para ajustes personalizados, contacta al equipo de desarrollo.
+              </div>
+            </Card>
+          </div>
         </div>
       )}
 
-      {/* TAB: LOG (sin cambios) */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* TAB: REGISTRO DE ACTIVIDAD (mock) */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
       {tab === "log" && (
         <div className="space-y-4">
-          {/* ... (igual que en tu código original) ... */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <input
+                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Buscar por usuario, acción, módulo..."
+                value={logFiltro}
+                onChange={(e) => setLogFiltro(e.target.value)}
+              />
+              <ClipboardList size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            </div>
+            <select
+              className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={logTipo}
+              onChange={(e) => setLogTipo(e.target.value)}
+            >
+              <option value="">Todos los tipos</option>
+              <option value="success">✅ Éxito</option>
+              <option value="info">ℹ️ Información</option>
+              <option value="warning">⚠️ Advertencia</option>
+              <option value="error">❌ Error</option>
+            </select>
+            <Button variant="secondary" size="sm" icon={<Download size={14} />} className="shrink-0">
+              Exportar log
+            </Button>
+          </div>
+
+          <Card>
+            {logFiltrado.length === 0 ? (
+              <EmptyState mensaje="No hay registros que coincidan con los filtros." icon={<ClipboardList size={40} />} />
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Tipo</Th><Th>Fecha y hora</Th><Th>Usuario</Th><Th>Módulo</Th><Th>Acción</Th><Th>Detalle</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logFiltrado.map((e) => (
+                    <tr key={e.id} className={clsx("hover:bg-slate-50 transition-colors", e.tipo === "error" && "bg-red-50/40", e.tipo === "warning" && "bg-amber-50/40")}>
+                      <Td><div className="flex items-center justify-center w-6">{LOG_ICON[e.tipo]}</div></Td>
+                      <Td className="text-xs text-slate-500 whitespace-nowrap">{e.fecha}</Td>
+                      <Td>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold">{e.usuario.charAt(0)}</div>
+                          <span className="text-sm text-slate-700 whitespace-nowrap">{e.usuario}</span>
+                        </div>
+                      </Td>
+                      <Td><Badge variant="indigo" size="sm">{e.modulo}</Badge></Td>
+                      <Td className="font-medium text-slate-700 text-sm whitespace-nowrap">{e.accion}</Td>
+                      <Td className="text-slate-500 text-xs">{e.detalle}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Card>
+          <p className="text-xs text-slate-400 text-right">Mostrando {logFiltrado.length} de {LOG_ENTRIES.length} registros</p>
         </div>
       )}
     </div>
