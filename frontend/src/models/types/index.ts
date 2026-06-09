@@ -10,7 +10,7 @@ export type TipoEquipo = 'Laptop' | 'Desktop' | 'All-in-one' | 'Tablet' | 'Impre
 export type EstadoAsignacion = 'Activa' | 'Devuelta' | 'Extraviada';
 export type TipoDocumento = 'Acta' | 'Hoja de vida' | 'Factura' | 'Garantía' | 'Contrato' | 'Manual' | 'Otro';
 
-export type RolSistema = 'admin' | 'gestor';
+export type RolSistema = 'admin' | 'gestor' | 'tecnico' | 'solo_lectura';
 // ─── USUARIO ──────────────────────────────────────────────────────────────────
 
 export interface Usuario {
