@@ -597,10 +597,10 @@ def generar_acta_entrega_pdf(
     # ─────────────────────────
     # FIRMAS (siempre se dibujan)
     # ─────────────────────────
-    y_firmas = 180   # Ajusta esta coordenada según tu plantilla (desde borde inferior)
+    y_firmas = 330   # Ajusta esta coordenada según tu plantilla (desde borde inferior)
     
     oc.setFont("Helvetica-Bold", 11)
-    oc.drawString(MX, y_firmas, "5. FIRMAS")
+    oc.drawString(MX, y_firmas, "")
     y_firmas -= 20
     
     if asignacion.get("firmado"):
@@ -610,7 +610,7 @@ def generar_acta_entrega_pdf(
                 img_data = base64.b64decode(firma_data.split(",")[1])
                 img = ImageReader(BytesIO(img_data))
                 oc.drawImage(img, MX, y_firmas-30, width=80, height=40, preserveAspectRatio=True, mask='auto')
-                oc.drawString(MX + 90, y_firmas-20, "Firma del responsable")
+                oc.drawString(MX + 90, y_firmas-20, "")
             except:
                 oc.drawString(MX, y_firmas-30, "Firma del responsable: (no se pudo cargar)")
         else:
