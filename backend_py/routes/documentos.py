@@ -1,23 +1,23 @@
 import os
 import uuid
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, status
 from fastapi.responses import Response
 from models.documento import DocumentoModel
 from utils.serializer import serialize
 from utils.files import safe_filename
+from utils.audit import log_action
+from dependencies import get_current_user
 
 router = APIRouter()
 
 UPLOADS_DIR = os.getenv("UPLOADS_DIR", "uploads")
-# Crear directorio por compatibilidad, aunque ya no guardamos archivos en disco
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
-# Configuración de seguridad
 ALLOWED_MIME_TYPES = {
     "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",        # .xlsx
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "image/png",
     "image/jpeg",
     "text/plain",
@@ -26,7 +26,6 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
 def _validate_file(content_type: str, size: int) -> None:
-    """Lanza excepción si el tipo MIME o tamaño no son permitidos."""
     if content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -67,15 +66,12 @@ async def get_by_id(id: str):
 
 @router.get("/{id}/download")
 async def download(id: str):
-    """Descarga segura de documentos desde el BLOB (única fuente de verdad)."""
     doc = await DocumentoModel.find_by_id(id)
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado.")
-
     archivo = await DocumentoModel.get_archivo(id)
     if not archivo or not archivo.get("contenido"):
         raise HTTPException(status_code=404, detail="Archivo no disponible para descarga.")
-
     filename = safe_filename(archivo.get("filename") or "documento", default="documento")
     return Response(
         content=archivo["contenido"],
@@ -91,39 +87,46 @@ async def create(
     equipo_id: str = Form(None),
     asignacion_id: str = Form(None),
     usuario_id: str = Form(None),
-    url: str = Form(None),   # Se ignora si se sube archivo
+    url: str = Form(None),
     version: int = Form(1),
     cargado_por: str = Form(None),
-    archivo: UploadFile = File(...),  # Campo obligatorio
+    archivo: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)  # ← agregado
 ):
-    # Validar archivo
     content = await archivo.read()
     await archivo.close()
     _validate_file(archivo.content_type or "application/octet-stream", len(content))
 
-    # Generar nombre único para el almacenamiento interno
     original_filename = archivo.filename or "documento"
     unique_filename = f"{uuid.uuid4().hex}_{safe_filename(original_filename, default='documento')}"
 
-    # Crear documento en BD (url queda como marcador, no se usará para servir)
     nuevo = await DocumentoModel.create({
         "nombre": nombre,
         "tipo": tipo,
         "equipo_id": equipo_id,
         "asignacion_id": asignacion_id,
         "usuario_id": usuario_id,
-        "url": f"blob://{unique_filename}",  # solo referencia
+        "url": f"blob://{unique_filename}",
         "version": version,
         "cargado_por": cargado_por,
     })
 
     if nuevo:
-        # Guardar contenido en tabla de blobs
         await DocumentoModel.upsert_archivo(
             nuevo["id"],
             filename=original_filename,
             mime_type=archivo.content_type or "application/octet-stream",
             contenido=content,
+        )
+
+        # Auditoría
+        user_id = current_user.get("sub") or current_user.get("id")
+        await log_action(
+            user_id=user_id,
+            accion="Subió documento",
+            modulo="Documentos",
+            entidad_id=nuevo["id"],
+            detalle=f"Nombre: {nombre}, Tipo: {tipo}, Tamaño: {len(content)} bytes"
         )
 
     return serialize({"data": nuevo, "message": "Documento registrado exitosamente."})
@@ -140,7 +143,8 @@ async def update(
     url: str = Form(None),
     version: int = Form(None),
     cargado_por: str = Form(None),
-    archivo: UploadFile = File(None),  # opcional
+    archivo: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user)  # ← agregado
 ):
     existe = await DocumentoModel.find_by_id(id)
     if not existe:
@@ -155,7 +159,6 @@ async def update(
         if val is not None:
             data[key] = val
 
-    # Si se envía un nuevo archivo, validar y actualizar BLOB
     if archivo:
         content = await archivo.read()
         await archivo.close()
@@ -163,32 +166,59 @@ async def update(
 
         original_filename = archivo.filename or "documento"
         unique_filename = f"{uuid.uuid4().hex}_{safe_filename(original_filename, default='documento')}"
-        data["url"] = f"blob://{unique_filename}"  # actualizar referencia
+        data["url"] = f"blob://{unique_filename}"
 
-        # Actualizar primero los metadatos
         actualizado = await DocumentoModel.update(id, data)
         if actualizado:
-            # Guardar nuevo contenido en blobs (sobrescribe)
             await DocumentoModel.upsert_archivo(
                 id,
                 filename=original_filename,
                 mime_type=archivo.content_type or "application/octet-stream",
                 contenido=content,
             )
+            # Auditoría (actualización con nuevo archivo)
+            user_id = current_user.get("sub") or current_user.get("id")
+            await log_action(
+            user_id=user_id,
+            accion="Actualizó documento (nuevo archivo)",
+            modulo="Documentos",
+            entidad_id=id,
+            detalle=f"Nombre: {nombre or existe['nombre']}, Nuevo tamaño: {len(content)} bytes"
+        )
         return serialize({"data": actualizado, "message": "Documento actualizado con nuevo archivo."})
 
     # Sin archivo nuevo: solo actualizar metadatos
     actualizado = await DocumentoModel.update(id, data)
+    # Auditoría (solo metadatos)
+    if actualizado and data:
+        await log_action(
+            user_id=current_user["id"],
+            accion="Actualizó documento (metadatos)",
+            modulo="Documentos",
+            entidad_id=id,
+            detalle=f"Campos modificados: {list(data.keys())}"
+        )
     return serialize({"data": actualizado, "message": "Documento actualizado."})
 
 
 @router.delete("/{id}")
-async def remove(id: str):
+async def remove(id: str, current_user: dict = Depends(get_current_user)):
     existe = await DocumentoModel.find_by_id(id)
     if not existe:
         raise HTTPException(status_code=404, detail="Documento no encontrado.")
     try:
         await DocumentoModel.delete(id)
+
+        # Auditoría
+        user_id = current_user.get("sub") or current_user.get("id")
+        await log_action(
+        user_id=user_id,
+        accion="Eliminó documento",
+        modulo="Documentos",
+        entidad_id=id,
+        detalle=f"Nombre: {existe.get('nombre', 'N/A')}, Tipo: {existe.get('tipo', 'N/A')}"
+    )
+
         return {"message": "Documento eliminado."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

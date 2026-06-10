@@ -470,3 +470,9 @@ export const susuariosApi = {
       body: JSON.stringify(body),
     }),
 };
+
+// ─── Auditoría ───────────────────────────────────────────────────────────────
+export const auditApi = {
+  getLogs: (params?: { limit?: number; offset?: number; modulo?: string; usuario_id?: string; accion?: string }) =>
+    request<{ data: any[]; total: number }>(buildUrl('/audit/logs', params)),
+};

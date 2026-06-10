@@ -4,12 +4,16 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from httpx import request
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from utils.audit import log_action
 
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+
 
 from models.susuario import (
+   
     get_by_username,
     update_ultimo_acceso,
     create_usuario_sistema,
@@ -60,7 +64,7 @@ async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(securit
 # ─── Endpoints ────────────────────────────────────────────
 
 @router.post("/login")
-async def login(body: dict):
+async def login(body: dict, request: Request):
     """
     Recibe { username, password } y retorna un JWT Bearer token.
     Mensajes de error unificados para evitar enumeración de usuarios.
@@ -116,12 +120,15 @@ async def login(body: dict):
         "rol": user["rol"],
         "nombre": user.get("nombre") or user["username"],
     })
+    
+    # Auditoría
+    client_ip = request.client.host if request.client else "IP desconocida"
 
     await log_action(
     user_id=user["id"],
     accion="Inicio de sesión",
     modulo="Sistema",
-    detalle="Acceso desde {request.client.host if request.client else 'IP desconocida'}"
+    detalle=f"Acceso desde {client_ip}"
     )
 
     return {

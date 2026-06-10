@@ -14,6 +14,8 @@ from routes import (
     auth, licencias, importar,
 )
 from dependencies  import get_current_user
+from routes import audit
+
 
 load_dotenv()
 
@@ -63,6 +65,8 @@ app.include_router(susuarios.router,    prefix="/api/Susuarios",    tags=["Usuar
 app.include_router(suministros.router,  prefix="/api/suministros",  tags=["Suministros"],     dependencies=protected)
 app.include_router(licencias.router,    prefix="/api/licencias",    tags=["Licencias"],       dependencies=protected)
 app.include_router(importar.router,     prefix="/api/importar",     tags=["Importar CSV"],    dependencies=protected)
+app.include_router(audit.router, prefix="/api/audit", tags=["Auditoría"], dependencies=protected)
+
 
 # Endpoints públicos: login/token + health
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])

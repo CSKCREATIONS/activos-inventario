@@ -1,6 +1,10 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from models.usuario import UsuarioModel
 from utils.serializer import serialize
+from utils.audit import log_action
+from dependencies import get_current_user
+
+
 
 router = APIRouter()
 
@@ -42,7 +46,7 @@ async def get_perfil(id: str):
 
 
 @router.post("", status_code=201)
-async def create(body: dict):
+async def create(body: dict, current_user: dict = Depends(get_current_user)):
     required = ["nombre", "area"]
     missing = [f for f in required if not body.get(f)]
     if missing:
@@ -53,15 +57,29 @@ async def create(body: dict):
     try:
         body["correo"] = _normalizar_correo(body.get("correo"))
         nuevo = await UsuarioModel.create(body)
+
+        # Obtener ID del usuario autenticado (el token usa "sub")
+        user_id = current_user.get("sub") or current_user.get("id")
+        if user_id:
+            await log_action(
+                user_id=user_id,
+                accion="Creó usuario",
+                modulo="Usuarios",
+                entidad_id=nuevo["id"],
+                detalle=f"Nombre: {body['nombre']}, Área: {body['area']}, Correo: {body.get('correo', 'N/A')}"
+            )
+        else:
+            print("Advertencia: no se pudo obtener user_id para auditoría (POST usuario)")
+
         return serialize({"data": nuevo, "message": "Usuario creado exitosamente."})
     except Exception as e:
+        print(f"Error en POST /usuarios: {e}")
         if "Duplicate entry" in str(e) or "1062" in str(e):
             raise HTTPException(status_code=409, detail="Ya existe un usuario con ese correo.")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.put("/{id}")
-async def update(id: str, body: dict):
+async def update(id: str, body: dict, current_user: dict = Depends(get_current_user)):
     existe = await UsuarioModel.find_by_id(id)
     if not existe:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
@@ -69,22 +87,49 @@ async def update(id: str, body: dict):
         if "correo" in body:
             body["correo"] = _normalizar_correo(body.get("correo"))
         actualizado = await UsuarioModel.update(id, body)
+
+        user_id = current_user.get("sub") or current_user.get("id")
+        if user_id:
+            await log_action(
+                user_id=user_id,
+                accion="Actualizó usuario",
+                modulo="Usuarios",
+                entidad_id=id,
+                detalle=f"Campos actualizados: {list(body.keys())}"
+            )
+        else:
+            print("Advertencia: no se pudo obtener user_id para auditoría (PUT usuario)")
+
         return serialize({"data": actualizado, "message": "Usuario actualizado."})
     except Exception as e:
+        print(f"Error en PUT /usuarios/{id}: {e}")
         if "Duplicate entry" in str(e) or "1062" in str(e):
             raise HTTPException(status_code=409, detail="Ya existe un usuario con ese correo.")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.delete("/{id}")
-async def remove(id: str):
+async def remove(id: str, current_user: dict = Depends(get_current_user)):
     existe = await UsuarioModel.find_by_id(id)
     if not existe:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
     try:
         await UsuarioModel.delete(id)
+
+        user_id = current_user.get("sub") or current_user.get("id")
+        if user_id:
+            await log_action(
+                user_id=user_id,
+                accion="Eliminó usuario",
+                modulo="Usuarios",
+                entidad_id=id,
+                detalle=f"Usuario: {existe.get('nombre', 'N/A')} (ID: {id})"
+            )
+        else:
+            print("Advertencia: no se pudo obtener user_id para auditoría (DELETE usuario)")
+
         return {"message": "Usuario eliminado."}
     except Exception as e:
+        print(f"Error en DELETE /usuarios/{id}: {e}")
         if "1451" in str(e) or "foreign key" in str(e).lower():
             raise HTTPException(
                 status_code=409,
