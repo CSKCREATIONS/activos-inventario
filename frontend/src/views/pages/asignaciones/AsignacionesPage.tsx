@@ -6,7 +6,16 @@ import type { Asignacion, AccesorioAsignado, Equipo, TipoEquipo } from '../../..
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
-import { Plus, RotateCcw, Link2, FileDown, Eye, X, Edit2 } from 'lucide-react';
+import { Plus, RotateCcw, Link2, FileDown, Eye, X, Edit2, PenTool } from 'lucide-react';
+import { asignacionesApi } from '../../../services/api';
+
+import { SignaturePad } from '../../components/ui/SignaturePad';
+
+
+
+
+
+
 
 const ASIGNACION_VARIANT = {
   Activa: 'green',
@@ -24,6 +33,7 @@ type AccesorioTexto = {
   marca?: string;
   modelo?: string;
 };
+
 
 const formatearAccesorio = (valor: string | AccesorioTexto | null | undefined): string => {
   if (!valor) return 'Accesorio';
@@ -112,6 +122,22 @@ export function AsignacionesPage() {
   const [error, setError] = useState('');
   const equipoSeleccionado = ctrl.equiposDisponibles.find((e) => e.id === form.equipo_id);
   const puedeGenerarHojaVida = equipoSeleccionado ? TIPOS_CON_HV.has(equipoSeleccionado.tipo_equipo) : false;
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [signatureAsignacionId, setSignatureAsignacionId] = useState<string | null>(null);
+
+  const handleFirmar = async (id: string, firmaDataUrl: string) => {
+    try {
+      await asignacionesApi.firmar(id, { firma: firmaDataUrl });
+      await ctrl.refetch();     // ✅ ahora ctrl existe
+      setShowSignatureModal(false);
+      setSignatureAsignacionId(null);
+      alert('Acta firmada correctamente');
+    } catch (err) {
+      console.error(err);
+      alert('Error al firmar el acta');
+    }
+  };
+
   
   // Estados para edición
   const [modalEditAbierto, setModalEditAbierto] = useState(false);
@@ -196,6 +222,11 @@ export function AsignacionesPage() {
       setModalEditAbierto(false);
     }
   };
+  const previsualizarActa = async (id: string) => {
+  const { blob } = await asignacionesApi.downloadActa(id, true);
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+};
 
   return (
     <div className="space-y-4">
@@ -292,12 +323,12 @@ export function AsignacionesPage() {
                   <Td>
                     <div className="flex flex-wrap gap-2">
                       <Button
-                        variant="outline"
-                        size="sm"
-                        icon={<Eye size={12} />}
-                        onClick={() => ctrl.previsualizarActa(a.id)}
-                      >
-                        Previsualizar
+                          variant="outline"
+                          size="sm"
+                          icon={<Eye size={12} />}
+                          onClick={() => ctrl.obtenerUrlActa(a.id)}
+                        >
+                          Previsualizar
                       </Button>
                       <Button
                         variant="outline"
@@ -316,6 +347,19 @@ export function AsignacionesPage() {
                         >
                           H.Vida
                         </Button>
+                      )}
+                      {ctrl.previewUrl && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-4xl h-[80vh]">
+                            <button
+                              onClick={ctrl.cerrarPreview}
+                              className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                            >
+                              <X size={20} />
+                            </button>
+                            <iframe src={ctrl.previewUrl} className="w-full h-full rounded-xl" title="Vista previa PDF" />
+                          </div>
+                        </div>
                       )}
                     </div>
                   </Td>
@@ -338,6 +382,17 @@ export function AsignacionesPage() {
                         >
                           Devolver
                         </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            icon={<PenTool size={12} />}
+                            onClick={() => {
+                              setSignatureAsignacionId(a.id);
+                              setShowSignatureModal(true);
+                            }}
+                          >
+                            Firmar
+                          </Button>
                       </div>
                     )}
                   </Td>
@@ -552,6 +607,18 @@ export function AsignacionesPage() {
           <Button variant="outline" onClick={() => setModalEditAbierto(false)}>Cancelar</Button>
           <Button onClick={handleGuardarEdicion} loading={ctrl.loading}>Guardar cambios</Button>
         </div>
+      </Modal>
+
+      <Modal
+        abierto={showSignatureModal}
+        onCerrar={() => setShowSignatureModal(false)}
+        titulo="Firmar acta de entrega"
+        size="md"
+      >
+        <SignaturePad
+          onSave={(dataUrl) => signatureAsignacionId && handleFirmar(signatureAsignacionId, dataUrl)}
+          onCancel={() => setShowSignatureModal(false)}
+        />
       </Modal>
     </div>
   );

@@ -84,6 +84,9 @@ export interface Asignacion {
   accesorios_entregados?: (string | AccesorioAsignado)[];
   acta_pdf?: string;
   hoja_vida_pdf?: string;
+  firmado?: boolean;
+  firma_responsable?: string;
+  fecha_firma?: string;
 }
 
 // ─── ACCESORIO ────────────────────────────────────────────────────────────────
@@ -190,3 +193,5 @@ export interface EquipoMantenimiento {
   cargo?: string;
   dias_vencido?: number | null;
   urgencia: 'sin_registro' | 'vencido';}
+
+

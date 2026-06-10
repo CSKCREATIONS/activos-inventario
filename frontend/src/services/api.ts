@@ -163,6 +163,8 @@ export const asignacionesApi = {
     request<{ data: Asignacion }>(`/asignaciones/${id}/devolucion`, {
       method: "POST",
     }),
+    firmar: (id: string, body: { firma: string }) =>
+    request<{ message: string; filename: string }>(`/asignaciones/${id}/firmar`, { method: 'POST', body: JSON.stringify(body) }),
 
   /** Genera/descarga el Acta de Entrega en PDF. Devuelve Blob + filename. */
   downloadActa: async (
@@ -473,6 +475,14 @@ export const susuariosApi = {
 
 // ─── Auditoría ───────────────────────────────────────────────────────────────
 export const auditApi = {
-  getLogs: (params?: { limit?: number; offset?: number; modulo?: string; usuario_id?: string; accion?: string }) =>
-    request<{ data: any[]; total: number }>(buildUrl('/audit/logs', params)),
+  getLogs: (params?: { limit?: number; offset?: number; modulo?: string; usuario_id?: string; accion?: string }) => {
+    // Convertir números a string
+    const stringParams: Record<string, string> = {};
+    if (params?.limit !== undefined) stringParams.limit = params.limit.toString();
+    if (params?.offset !== undefined) stringParams.offset = params.offset.toString();
+    if (params?.modulo) stringParams.modulo = params.modulo;
+    if (params?.usuario_id) stringParams.usuario_id = params.usuario_id;
+    if (params?.accion) stringParams.accion = params.accion;
+    return request<{ data: any[]; total: number }>(buildUrl('/audit/logs', stringParams));
+  },
 };

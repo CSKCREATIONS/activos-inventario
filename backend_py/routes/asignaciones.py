@@ -2,7 +2,7 @@ import os
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from models.asignacion import AsignacionModel
@@ -16,7 +16,6 @@ from utils.files import safe_filename
 from utils.serializer import serialize
 from utils.audit import log_action
 from config.db import get_pool
-
 
 router = APIRouter()
 
@@ -289,3 +288,51 @@ async def update(id: str, body: dict, current_user: dict = Depends(get_current_u
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{id}/firmar")
+async def firmar_asignacion(
+    id: str,
+    body: dict,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    asignacion = await AsignacionModel.find_by_id(id)
+    if not asignacion:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+    if asignacion["estado"] != "Activa":
+        raise HTTPException(status_code=400, detail="Solo se pueden firmar asignaciones activas")
+
+    firma_base64 = body.get("firma")
+    if not firma_base64:
+        raise HTTPException(status_code=400, detail="Firma requerida")
+
+    # Actualizar la asignación con la firma
+    await AsignacionModel.update(id, {
+        "firma_responsable": firma_base64,
+        "fecha_firma": date.today().isoformat(),
+        "firmado": 1
+    })
+
+    # Regenerar el acta
+    asignacion_actualizada = await AsignacionModel.find_by_id(id)
+    cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
+    accesorios = normalizar_accesorios_entregados(asignacion_actualizada.get("accesorios_entregados"))
+    pdf_bytes, filename, _ = await _generar_y_registrar_acta(
+        asignacion_actualizada,
+        accesorios_entregados=accesorios,
+        cargado_por=cargado_por,
+        regenerar=True
+    )
+
+    # Auditoría
+    user_id = current_user.get("sub") or current_user.get("id")
+    await log_action(
+        user_id=user_id,
+        accion="Firmó acta",
+        modulo="Asignaciones",
+        entidad_id=id,
+        detalle="Acta firmada por responsable"
+    )
+
+    return {"message": "Acta firmada correctamente", "filename": filename}

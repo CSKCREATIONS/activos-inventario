@@ -1,12 +1,11 @@
 import uuid
 import json
 from datetime import date
-
 from config.db import get_pool
-
+from models.asignacion_usuario import AsignacionUsuarioModel
 
 def _map_asignacion(row: dict) -> dict:
-    """Normaliza campos JSON (accesorios_entregados, usuarios_ids) a listas de Python."""
+    """Normaliza campos JSON (accesorios_entregados) y agrega usuarios_ids vacío"""
     if not row:
         return row
 
@@ -27,38 +26,15 @@ def _map_asignacion(row: dict) -> dict:
                 else:
                     row["accesorios_entregados"] = [parsed] if parsed else []
             except Exception:
-                # Si no es JSON, tratamos como texto plano (no debería ocurrir con migraciones correctas)
                 row["accesorios_entregados"] = [val] if val.strip() else []
         else:
             row["accesorios_entregados"] = []
     else:
         row["accesorios_entregados"] = []
 
-    # Parsear usuarios_ids
-    usuarios_val = row.get("usuarios_ids")
-    if usuarios_val:
-        if isinstance(usuarios_val, (bytes, bytearray)):
-            try:
-                usuarios_val = usuarios_val.decode("utf-8")
-            except Exception:
-                row["usuarios_ids"] = []
-                return row
-        if isinstance(usuarios_val, str) and usuarios_val.strip():
-            try:
-                parsed = json.loads(usuarios_val)
-                if isinstance(parsed, list):
-                    row["usuarios_ids"] = parsed
-                else:
-                    row["usuarios_ids"] = [parsed] if parsed else []
-            except Exception:
-                row["usuarios_ids"] = []
-        else:
-            row["usuarios_ids"] = []
-    else:
-        row["usuarios_ids"] = []
-
+    # Los usuarios_ids se cargarán aparte; aquí dejamos una lista vacía
+    row["usuarios_ids"] = []
     return row
-
 
 class AsignacionModel:
     @staticmethod
@@ -74,7 +50,6 @@ class AsignacionModel:
             WHERE 1=1
         """
         params = []
-
         if busqueda:
             sql += " AND (u.nombre LIKE %s OR e.placa LIKE %s OR e.tipo_equipo LIKE %s)"
             q = f"%{busqueda}%"
@@ -82,13 +57,20 @@ class AsignacionModel:
         if estado:
             sql += " AND a.estado = %s"
             params.append(estado)
-
         sql += " ORDER BY a.fecha_asignacion DESC"
+
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(sql, params)
                 rows = await cur.fetchall()
-                return [_map_asignacion(r) for r in rows]
+                result = []
+                for row in rows:
+                    item = _map_asignacion(row)
+                    # Cargar usuarios adicionales desde la tabla puente
+                    usuarios = await AsignacionUsuarioModel.get_by_asignacion(item["id"])
+                    item["usuarios_ids"] = [u["usuario_id"] for u in usuarios]
+                    result.append(item)
+                return result
 
     @staticmethod
     async def find_by_id(id: str) -> dict | None:
@@ -106,7 +88,12 @@ class AsignacionModel:
                     [id],
                 )
                 row = await cur.fetchone()
-                return _map_asignacion(row) if row else None
+                if not row:
+                    return None
+                item = _map_asignacion(row)
+                usuarios = await AsignacionUsuarioModel.get_by_asignacion(item["id"])
+                item["usuarios_ids"] = [u["usuario_id"] for u in usuarios]
+                return item
 
     @staticmethod
     async def create(data: dict) -> dict | None:
@@ -126,10 +113,10 @@ class AsignacionModel:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
-            # Iniciamos una transacción explícita
-            async with conn.begin():
-                async with conn.cursor() as cur:
-                    # Bloquear la fila del equipo para lectura/escritura (SELECT FOR UPDATE)
+            async with conn.cursor() as cur:
+                await conn.begin()
+                try:
+                    # Bloquear el equipo para lectura/escritura
                     await cur.execute(
                         "SELECT estado FROM equipos WHERE id = %s FOR UPDATE",
                         [equipo_id]
@@ -143,9 +130,10 @@ class AsignacionModel:
                     # Insertar la asignación
                     await cur.execute(
                         """INSERT INTO asignaciones
-                           (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones,
-                            accesorios_entregados, acta_pdf, hoja_vida_pdf)
-                           VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s, %s)""",
+                        (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones,
+                            accesorios_entregados, acta_pdf, hoja_vida_pdf,
+                            firma_responsable, fecha_firma, firmado)
+                        VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s, %s, %s, %s, %s)""",
                         [
                             new_id,
                             usuario_id,
@@ -155,6 +143,9 @@ class AsignacionModel:
                             accesorios_json,
                             data.get("acta_pdf"),
                             data.get("hoja_vida_pdf"),
+                            None,   # firma_responsable
+                            None,   # fecha_firma
+                            0       # firmado
                         ]
                     )
 
@@ -163,9 +154,17 @@ class AsignacionModel:
                         "UPDATE equipos SET estado = 'Asignado' WHERE id = %s",
                         [equipo_id]
                     )
+                    await conn.commit()
+                except Exception as e:
+                    await conn.rollback()
+                    raise
 
-            # Al salir del bloque async with conn.begin(), se hace commit automáticamente
-            # si no hubo excepción; si la hay, se hace rollback.
+        # Insertar usuarios adicionales en tabla puente
+        if data.get("usuarios_ids"):
+            for uid in data["usuarios_ids"]:
+                await AsignacionUsuarioModel.create(new_id, uid, "secundario")
+        # Opcional: también podrías insertar al usuario principal como "principal" en la tabla puente
+        # await AsignacionUsuarioModel.create(new_id, usuario_id, "principal")
 
         return await AsignacionModel.find_by_id(new_id)
 
@@ -184,12 +183,10 @@ class AsignacionModel:
         async with pool.acquire() as conn:
             async with conn.begin():
                 async with conn.cursor() as cur:
-                    # Opcional: bloquear la asignación y el equipo para consistencia
                     await cur.execute(
                         "SELECT estado FROM asignaciones WHERE id = %s FOR UPDATE",
                         [id]
                     )
-                    # Verificar nuevamente que sigue activa (evita cambios entre el find y ahora)
                     row = await cur.fetchone()
                     if not row or row["estado"] != "Activa":
                         raise ValueError("La asignación ya no está activa.")
@@ -206,37 +203,44 @@ class AsignacionModel:
 
     @staticmethod
     async def update(id: str, data: dict) -> dict | None:
-        """Actualiza campos permitidos de una asignación. No usa transacciones largas."""
         allowed = [
             "observaciones",
             "accesorios_entregados",
-            "usuarios_ids",
             "estado",
             "acta_pdf",
             "hoja_vida_pdf",
             "fecha_devolucion",
+            "firma_responsable",
+            "fecha_firma",
+            "firmado",           # ← añadir
         ]
         fields = []
         values = []
         for key in allowed:
             if key in data:
                 fields.append(f"{key} = %s")
-                if key in ("accesorios_entregados", "usuarios_ids") and isinstance(data[key], list):
+                if key in ("accesorios_entregados",) and isinstance(data[key], list):
                     values.append(json.dumps(data[key], ensure_ascii=False))
                 else:
                     values.append(data[key])
 
-        if not fields:
-            return await AsignacionModel.find_by_id(id)
+        if fields:
+            values.append(id)
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        f"UPDATE asignaciones SET {', '.join(fields)} WHERE id = %s", values
+                    )
 
-        values.append(id)
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                # No necesitamos transacción explícita para una sola actualización
-                await cur.execute(
-                    f"UPDATE asignaciones SET {', '.join(fields)} WHERE id = %s", values
-                )
+        # Actualizar tabla puente si vienen usuarios_ids
+        if "usuarios_ids" in data:
+            await AsignacionUsuarioModel.delete_by_asignacion(id)
+            for uid in data["usuarios_ids"]:
+                await AsignacionUsuarioModel.create(id, uid, "secundario")
+            # Opcional: también podrías mantener al usuario principal en la tabla puente,
+            # pero ten en cuenta que ya existe en el campo usuario_id de la asignación.
+
         return await AsignacionModel.find_by_id(id)
 
     @staticmethod

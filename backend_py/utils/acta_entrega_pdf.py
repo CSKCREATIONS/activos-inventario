@@ -32,6 +32,10 @@ except Exception:
 
 from utils.accesorios import formatear_accesorio
 
+import base64
+from io import BytesIO
+from reportlab.lib.utils import ImageReader
+
 
 # ─────────────────────────────────────────────
 # COLORES
@@ -572,38 +576,47 @@ def generar_acta_entrega_pdf(
 
     obs = str(asignacion.get("observaciones") or "")
     
-    # Si hay accesorios que no se colocaron en campos específicos, agregarlos a observaciones
     if accesorios_texto_observaciones:
         if obs:
             obs = accesorios_texto_observaciones + "\n" + obs
         else:
             obs = accesorios_texto_observaciones
-        print(f"[ACTA] Observaciones finales con accesorios no colocados: {obs[:100]}...")
 
     if obs:
-
         oc.setFont(DEFAULT_FONT, 8)
-
         text = oc.beginText()
-
-        text.setTextOrigin(
-            POS["obs"][0],
-            POS["obs"][1]
-        )
-
+        text.setTextOrigin(POS["obs"][0], POS["obs"][1])
         max_chars = 90
-
         for line in obs.splitlines():
-
             while len(line) > max_chars:
-
                 text.textLine(line[:max_chars])
-
                 line = line[max_chars:]
-
             text.textLine(line)
-
         oc.drawText(text)
+
+    # ─────────────────────────
+    # FIRMAS (siempre se dibujan)
+    # ─────────────────────────
+    y_firmas = 180   # Ajusta esta coordenada según tu plantilla (desde borde inferior)
+    
+    oc.setFont("Helvetica-Bold", 11)
+    oc.drawString(MX, y_firmas, "5. FIRMAS")
+    y_firmas -= 20
+    
+    if asignacion.get("firmado"):
+        firma_data = asignacion.get("firma_responsable")
+        if firma_data and firma_data.startswith("data:image"):
+            try:
+                img_data = base64.b64decode(firma_data.split(",")[1])
+                img = ImageReader(BytesIO(img_data))
+                oc.drawImage(img, MX, y_firmas-30, width=80, height=40, preserveAspectRatio=True, mask='auto')
+                oc.drawString(MX + 90, y_firmas-20, "Firma del responsable")
+            except:
+                oc.drawString(MX, y_firmas-30, "Firma del responsable: (no se pudo cargar)")
+        else:
+            oc.drawString(MX, y_firmas-30, "Firma del responsable: (digital)")
+    else:
+        oc.drawString(MX, y_firmas-30, "Firma del responsable: _________________________")
 
     oc.showPage()
     oc.save()
@@ -626,6 +639,9 @@ def generar_acta_entrega_pdf(
     writer.write(out)
 
     return out.getvalue()
+
+
+    
 
 
 # ─────────────────────────────────────────────

@@ -4,6 +4,7 @@
 import { clsx } from 'clsx';
 import type { ReactNode } from 'react';
 import type { EstadoEquipo, Criticidad, Confidencialidad } from '../../../models/types/index';
+import { X } from 'lucide-react';
 
 // ─── BADGE GENÉRICO ───────────────────────────────────────────────────────────
 
@@ -320,5 +321,27 @@ export function Td({ children, className }: { children: ReactNode; className?: s
     <td className={clsx('px-4 py-3 text-slate-700 border-b border-slate-100', className)}>
       {children}
     </td>
+  );
+}
+
+// Agrega esto al final del archivo
+interface PdfViewerProps {
+  url: string;
+  onClose: () => void;
+}
+
+export function PdfViewer({ url, onClose }: PdfViewerProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-4xl h-[80vh]">
+        <button
+          onClick={onClose}
+          className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+        >
+          <X size={20} />
+        </button>
+        <iframe src={url} className="w-full h-full rounded-xl" title="Vista previa PDF" />
+      </div>
+    </div>
   );
 }
