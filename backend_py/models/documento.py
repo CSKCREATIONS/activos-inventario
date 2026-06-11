@@ -139,10 +139,11 @@ class DocumentoModel:
         pool = await get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
+                # En create
                 await cur.execute(
                     """INSERT INTO documentos
-                       (id, nombre, tipo, equipo_id, asignacion_id, usuario_id, url, version, fecha_carga, cargado_por)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (id, nombre, tipo, equipo_id, asignacion_id, usuario_id, area, url, version, fecha_carga, cargado_por)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     [
                         new_id,
                         data["nombre"],
@@ -150,11 +151,12 @@ class DocumentoModel:
                         data.get("equipo_id"),
                         data.get("asignacion_id"),
                         data.get("usuario_id"),
+                        data.get("area"),          # ← nuevo
                         data["url"],
                         data.get("version", 1),
                         fecha_carga,
                         data.get("cargado_por"),
-                    ],
+                    ]
                 )
         return await DocumentoModel.find_by_id(new_id)
 

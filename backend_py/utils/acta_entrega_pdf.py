@@ -573,7 +573,6 @@ def generar_acta_entrega_pdf(
     # ─────────────────────────
     # OBSERVACIONES
     # ─────────────────────────
-
     obs = str(asignacion.get("observaciones") or "")
     
     if accesorios_texto_observaciones:
@@ -594,29 +593,33 @@ def generar_acta_entrega_pdf(
             text.textLine(line)
         oc.drawText(text)
 
-    # ─────────────────────────
-    # FIRMAS (siempre se dibujan)
-    # ─────────────────────────
-    y_firmas = 330   # Ajusta esta coordenada según tu plantilla (desde borde inferior)
+    # ==========================================================
+    # SECCIÓN DE FIRMAS (SIEMPRE se dibuja, haya o no observaciones)
+    # ==========================================================
+    # Ajusta esta coordenada Y para subir o bajar la firma
+    y_firmas = 350 # valor actual, pruébalo y si no sube, aumenta (ej. 350, 370)
     
     oc.setFont("Helvetica-Bold", 11)
     oc.drawString(MX, y_firmas, "")
     y_firmas -= 20
     
     if asignacion.get("firmado"):
-        firma_data = asignacion.get("firma_responsable")
+        firma_data = asignacion.get("")
         if firma_data and firma_data.startswith("data:image"):
             try:
                 img_data = base64.b64decode(firma_data.split(",")[1])
                 img = ImageReader(BytesIO(img_data))
-                oc.drawImage(img, MX, y_firmas-30, width=80, height=40, preserveAspectRatio=True, mask='auto')
-                oc.drawString(MX + 90, y_firmas-20, "")
-            except:
-                oc.drawString(MX, y_firmas-30, "Firma del responsable: (no se pudo cargar)")
+                # Dibuja la firma (ajusta width/height si es necesario)
+                oc.drawImage(img, MX, y_firmas-30, width=100, height=50, preserveAspectRatio=True, mask='auto')
+                oc.drawString(MX + 110, y_firmas-20, "")
+            except Exception as e:
+                oc.drawString(MX, y_firmas-30, f"Error al cargar firma: {str(e)[:30]}")
         else:
             oc.drawString(MX, y_firmas-30, "Firma del responsable: (digital)")
     else:
         oc.drawString(MX, y_firmas-30, "Firma del responsable: _________________________")
+
+    
 
     oc.showPage()
     oc.save()

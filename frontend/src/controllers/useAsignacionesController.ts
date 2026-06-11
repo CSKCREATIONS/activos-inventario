@@ -175,7 +175,7 @@ export function useAsignacionesController() {
   // Función para obtener URL del blob y abrir modal
   const obtenerUrlActa = async (asignacionId: string) => {
     try {
-      const { blob } = await asignacionesApi.downloadActa(asignacionId, true);
+      const { blob } = await asignacionesApi.downloadActa(asignacionId, false);
       const url = URL.createObjectURL(blob);
       setPreviewUrl(url);
     } catch (err) {

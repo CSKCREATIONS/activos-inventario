@@ -1,6 +1,5 @@
-import { useRef, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { Button } from './index';
-import { X } from 'lucide-react';
 
 interface SignaturePadProps {
   onSave: (dataUrl: string) => void;
@@ -11,6 +10,20 @@ export function SignaturePad({ onSave, onCancel }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [drawing, setDrawing] = useState(false);
 
+  // Configuración inicial del canvas (solo una vez)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#000000';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }, []);
+
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -18,8 +31,10 @@ export function SignaturePad({ onSave, onCancel }: SignaturePadProps) {
     if (!ctx) return;
     setDrawing(true);
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
     ctx.beginPath();
     ctx.moveTo(x, y);
     ctx.stroke();
@@ -32,8 +47,10 @@ export function SignaturePad({ onSave, onCancel }: SignaturePadProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
     ctx.lineTo(x, y);
     ctx.stroke();
     ctx.beginPath();
@@ -50,7 +67,7 @@ export function SignaturePad({ onSave, onCancel }: SignaturePadProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   };
 
@@ -68,8 +85,7 @@ export function SignaturePad({ onSave, onCancel }: SignaturePadProps) {
           ref={canvasRef}
           width={500}
           height={200}
-          style={{ width: '100%', height: 'auto', touchAction: 'none' }}
-          className="bg-white rounded"
+          style={{ width: '100%', height: 'auto', touchAction: 'none', backgroundColor: 'white' }}
           onMouseDown={startDrawing}
           onMouseMove={draw}
           onMouseUp={stopDrawing}

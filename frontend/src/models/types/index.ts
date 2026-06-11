@@ -8,7 +8,7 @@ export type Criticidad = 'Baja' | 'Media' | 'Alta' | 'Crítica';
 export type Confidencialidad = 'Pública' | 'Interna' | 'Confidencial' | 'Restringida';
 export type TipoEquipo = 'Laptop' | 'Desktop' | 'All-in-one' | 'Tablet' | 'Impresora' | 'Celular' | 'Monitor' | 'Servidor' | 'Switch' | 'Router' | 'UPS' | 'Otro';
 export type EstadoAsignacion = 'Activa' | 'Devuelta' | 'Extraviada';
-export type TipoDocumento = 'Acta' | 'Hoja de vida' | 'Factura' | 'Garantía' | 'Contrato' | 'Manual' | 'Otro';
+export type TipoDocumento = 'Acta' | 'Hoja de vida' | 'Factura' | 'Garantía' | 'Contrato' | 'Manual' | 'Mantenimiento' | 'Otro';
 
 export type RolSistema = 'admin' | 'gestor' | 'tecnico' | 'solo_lectura';
 // ─── USUARIO ──────────────────────────────────────────────────────────────────
@@ -112,12 +112,12 @@ export interface Documento {
   equipo_id?: string;
   asignacion_id?: string;
   usuario_id?: string;
+  area?: string;           // ← Nuevo campo
   url: string;
   version: number;
   fecha_carga: string;
   cargado_por?: string;
 }
-
 // ─── SUMINISTRO ──────────────────────────────────────────────────────────────
 
 export interface Suministro {

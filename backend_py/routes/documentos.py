@@ -87,11 +87,12 @@ async def create(
     equipo_id: str = Form(None),
     asignacion_id: str = Form(None),
     usuario_id: str = Form(None),
+    area: str = Form(None),   # ← nuevo
     url: str = Form(None),
     version: int = Form(1),
     cargado_por: str = Form(None),
     archivo: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user)  # ← agregado
+    current_user: dict = Depends(get_current_user)
 ):
     content = await archivo.read()
     await archivo.close()
@@ -106,6 +107,7 @@ async def create(
         "equipo_id": equipo_id,
         "asignacion_id": asignacion_id,
         "usuario_id": usuario_id,
+        "area": area,
         "url": f"blob://{unique_filename}",
         "version": version,
         "cargado_por": cargado_por,

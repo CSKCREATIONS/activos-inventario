@@ -231,38 +231,7 @@ async def get_acta_pdf(
         },
     )
 
-
-@router.post("/{id}/devolucion")
-async def registrar_devolucion(id: str, current_user: dict = Depends(get_current_user)):
-    try:
-        asignacion = await AsignacionModel.find_by_id(id)
-        if not asignacion:
-            raise HTTPException(status_code=404, detail="Asignación no encontrada.")
-
-        accesorios_ids = []
-        accesorios_raw = asignacion.get("accesorios_entregados", [])
-        for acc in accesorios_raw:
-            if isinstance(acc, dict) and acc.get("id"):
-                accesorios_ids.append(acc["id"])
-        if accesorios_ids:
-            await _cambiar_estado_accesorios(accesorios_ids, "Disponible")
-
-        actualizada = await AsignacionModel.registrar_devolucion(id)
-
-        user_id = current_user.get("sub") or current_user.get("id")
-        await log_action(
-            user_id=user_id,
-            accion="Registró devolución",
-            modulo="Asignaciones",
-            entidad_id=id,
-            detalle=f"Equipo devuelto, {len(accesorios_ids)} accesorios liberados"
-        )
-
-        return serialize({"data": actualizada, "message": "Devolución registrada. Equipo y accesorios marcados como Disponibles."})
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    
 
 
 @router.put("/{id}")
@@ -290,6 +259,7 @@ async def update(id: str, body: dict, current_user: dict = Depends(get_current_u
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
 @router.post("/{id}/firmar")
 async def firmar_asignacion(
     id: str,
@@ -307,23 +277,12 @@ async def firmar_asignacion(
     if not firma_base64:
         raise HTTPException(status_code=400, detail="Firma requerida")
 
-    # Actualizar la asignación con la firma
+    # Solo actualiza la base de datos; NO regeneres el acta aquí
     await AsignacionModel.update(id, {
         "firma_responsable": firma_base64,
         "fecha_firma": date.today().isoformat(),
         "firmado": 1
     })
-
-    # Regenerar el acta
-    asignacion_actualizada = await AsignacionModel.find_by_id(id)
-    cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
-    accesorios = normalizar_accesorios_entregados(asignacion_actualizada.get("accesorios_entregados"))
-    pdf_bytes, filename, _ = await _generar_y_registrar_acta(
-        asignacion_actualizada,
-        accesorios_entregados=accesorios,
-        cargado_por=cargado_por,
-        regenerar=True
-    )
 
     # Auditoría
     user_id = current_user.get("sub") or current_user.get("id")
@@ -335,4 +294,43 @@ async def firmar_asignacion(
         detalle="Acta firmada por responsable"
     )
 
-    return {"message": "Acta firmada correctamente", "filename": filename}
+    return {"message": "Acta firmada correctamente"}
+
+@router.post("/{id}/devolucion")
+async def registrar_devolucion(id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        asignacion = await AsignacionModel.find_by_id(id)
+        if not asignacion:
+            raise HTTPException(status_code=404, detail="Asignación no encontrada.")
+
+        accesorios_raw = asignacion.get("accesorios_entregados") or []
+        if not isinstance(accesorios_raw, list):
+            accesorios_raw = []
+
+        accesorios_ids = []
+        for acc in accesorios_raw:
+            if isinstance(acc, dict) and acc.get("id"):
+                accesorios_ids.append(acc["id"])
+        if accesorios_ids:
+            await _cambiar_estado_accesorios(accesorios_ids, "Disponible")
+
+        actualizada = await AsignacionModel.registrar_devolucion(id)
+
+        user_id = current_user.get("sub") or current_user.get("id")
+        if user_id:
+            await log_action(
+                user_id=user_id,
+                accion="Registró devolución",
+                modulo="Asignaciones",
+                entidad_id=id,
+                detalle=f"Equipo devuelto, {len(accesorios_ids)} accesorios liberados"
+            )
+
+        return serialize({"data": actualizada, "message": "Devolución registrada. Equipo y accesorios marcados como Disponibles."})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print("Error inesperado en devolución:")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
