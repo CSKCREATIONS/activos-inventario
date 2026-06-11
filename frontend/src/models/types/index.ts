@@ -50,6 +50,8 @@ export interface Equipo {
   costo?: number;
   es_rentado: boolean;
   observaciones?: string;
+  sede?: string;
+
   // ── Campos Hoja de Vida ──────────────────────────────
   procesador?: string;
   nombre_equipo?: string;
@@ -58,6 +60,7 @@ export interface Equipo {
   marca_monitor?: string;
   placa_monitor?: string;  // ── Mantenimiento ─────────────────────────────────────────
   ultimo_mantenimiento?: string | null;}
+  
 
 // ─── ASIGNACIÓN ───────────────────────────────────────────────────────────────
 
@@ -87,6 +90,8 @@ export interface Asignacion {
   firmado?: boolean;
   firma_responsable?: string;
   fecha_firma?: string;
+  sede?: string;
+
 }
 
 // ─── ACCESORIO ────────────────────────────────────────────────────────────────
@@ -117,6 +122,7 @@ export interface Documento {
   version: number;
   fecha_carga: string;
   cargado_por?: string;
+  sede?: string;
 }
 // ─── SUMINISTRO ──────────────────────────────────────────────────────────────
 

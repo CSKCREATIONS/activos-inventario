@@ -174,6 +174,7 @@ export function ActivosPage() {
           <Field label="Proveedor" value={form.proveedor ?? ''} onChange={(e) => setForm((f) => ({ ...f, proveedor: e.target.value }))} />
           <Field label="Fecha de compra" type="date" value={form.fecha_compra ?? ''} onChange={(e) => setForm((f) => ({ ...f, fecha_compra: e.target.value }))} />
           <Field label="Costo" type="number" value={form.costo?.toString() ?? ''} onChange={(e) => setForm((f) => ({ ...f, costo: Number(e.target.value) }))} />
+          <Field label="Sede" value={form.sede ?? ''} onChange={(e) => setForm((f) => ({ ...f, sede: e.target.value }))} />
           <div className="flex items-center gap-2 sm:col-span-2">
             <input type="checkbox" id="rentado" checked={form.es_rentado ?? false} onChange={(e) => setForm((f) => ({ ...f, es_rentado: e.target.checked }))} className="rounded" />
             <label htmlFor="rentado" className="text-sm font-medium text-slate-700">Equipo rentado</label>

@@ -141,7 +141,8 @@ class AsignacionModel:
         # Campos permitidos para actualización directa
         allowed = {
             "observaciones", "accesorios_entregados", "estado", "acta_pdf",
-            "hoja_vida_pdf", "fecha_devolucion", "firma_responsable", "fecha_firma", "firmado"
+            "hoja_vida_pdf", "fecha_devolucion", "firma_responsable", "fecha_firma", "firmado", "sede",  
+
         }
         updates = []
         values = []
@@ -252,7 +253,7 @@ class AsignacionModel:
                         """INSERT INTO asignaciones
                         (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones,
                             accesorios_entregados, acta_pdf, hoja_vida_pdf,
-                            firma_responsable, fecha_firma, firmado)
+                            firma_responsable, fecha_firma, firmado, sede)
                         VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s, %s, %s, %s, %s)""",
                         [
                             new_id, usuario_id, equipo_id, fecha_asignacion,

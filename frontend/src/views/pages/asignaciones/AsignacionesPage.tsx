@@ -416,6 +416,7 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
             onChange={(e) => setForm((f) => ({ ...f, usuario_id: e.target.value }))}
             options={ctrl.usuarios.map((u) => ({ value: u.id, label: `${u.nombre} – ${u.area}` }))}
           />
+          
           <SelectField
             label="Equipo disponible *"
             value={form.equipo_id}

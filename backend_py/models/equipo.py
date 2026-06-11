@@ -118,7 +118,8 @@ class EquipoModel:
         allowed = [
             "placa", "serial", "tipo_equipo", "marca", "modelo", "sistema_operativo",
             "version_so", "ram", "disco", "tecnologia", "criticidad", "confidencialidad",
-            "estado", "fecha_compra", "proveedor", "costo", "es_rentado", "observaciones",
+            "estado", "fecha_compra", "proveedor", "costo", "es_rentado", "observaciones", "sede", "sede", 
+
             # ── Hoja de Vida ──
             "procesador", "nombre_equipo", "licenciamiento_so",
             "licenciamiento_office", "marca_monitor", "placa_monitor",

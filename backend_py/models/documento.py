@@ -142,8 +142,8 @@ class DocumentoModel:
                 # En create
                 await cur.execute(
                     """INSERT INTO documentos
-                    (id, nombre, tipo, equipo_id, asignacion_id, usuario_id, area, url, version, fecha_carga, cargado_por)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (id, nombre, tipo, equipo_id, asignacion_id, usuario_id, area, url, version, fecha_carga, cargado_por, sede)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     [
                         new_id,
                         data["nombre"],
@@ -156,6 +156,7 @@ class DocumentoModel:
                         data.get("version", 1),
                         fecha_carga,
                         data.get("cargado_por"),
+                        data.get("sede"),
                     ]
                 )
         return await DocumentoModel.find_by_id(new_id)
@@ -172,6 +173,8 @@ class DocumentoModel:
             "version",
             "fecha_carga",
             "cargado_por",
+            "sede",
+
         ]
         fields, values = [], []
         for key in allowed:
