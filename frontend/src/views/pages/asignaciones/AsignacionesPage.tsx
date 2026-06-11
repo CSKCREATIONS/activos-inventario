@@ -126,17 +126,21 @@ export function AsignacionesPage() {
   const [signatureAsignacionId, setSignatureAsignacionId] = useState<string | null>(null);
 
   const handleFirmar = async (id: string, firmaDataUrl: string) => {
-    try {
-      await asignacionesApi.firmar(id, { firma: firmaDataUrl });
-      await ctrl.refetch();     // ✅ ahora ctrl existe
-      setShowSignatureModal(false);
-      setSignatureAsignacionId(null);
-      alert('Acta firmada correctamente');
-    } catch (err) {
-      console.error(err);
-      alert('Error al firmar el acta');
+  try {
+    await asignacionesApi.firmar(id, { firma: firmaDataUrl });
+    await ctrl.refetch(); // recarga la lista
+    setShowSignatureModal(false);
+    setSignatureAsignacionId(null);
+    // Si el modal de previsualización estaba abierto, actualiza la URL sin regenerar el PDF
+    if (ctrl.previewUrl) {
+      await ctrl.obtenerUrlActa // ← usa la función existente
     }
-  };
+  } catch (err) {
+    console.error(err);
+    alert('Error al firmar el acta');
+  }
+};
+
 
   
   // Estados para edición

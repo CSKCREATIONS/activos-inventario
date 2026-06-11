@@ -6,10 +6,13 @@ import { useUsuariosStore } from "../models/stores/useUsuariosStore";
 import { asignacionesApi, equiposApi, usuariosApi } from "../services/api";
 import type { Asignacion, AccesorioAsignado } from "../models/types/index";
 
+
+
 export function useAsignacionesController() {
   const { asignaciones, setAsignaciones, updateAsignacion } = useAsignacionesStore();
   const { equipos, setEquipos } = useEquiposStore();
   const { usuarios, setUsuarios } = useUsuariosStore();
+  
 
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstado, setFiltroEstado] = useState<string>("");
@@ -253,3 +256,4 @@ export function useAsignacionesController() {
     refetch: fetchData,
   };
 }
+

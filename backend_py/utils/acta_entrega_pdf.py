@@ -593,32 +593,46 @@ def generar_acta_entrega_pdf(
             text.textLine(line)
         oc.drawText(text)
 
-    # ==========================================================
-    # SECCIÓN DE FIRMAS (SIEMPRE se dibuja, haya o no observaciones)
-    # ==========================================================
-    # Ajusta esta coordenada Y para subir o bajar la firma
-    y_firmas = 350 # valor actual, pruébalo y si no sube, aumenta (ej. 350, 370)
+      # ─────────────────────────
+    # FIRMAS (asegurar que se dibuje siempre)
+    # ─────────────────────────
+    # La plantilla tiene un espacio para firmas. 
+    # Vamos a dibujar la firma justo encima de la línea "Firma del responsable: ______"
+    # Usamos coordenadas absolutas según la plantilla (ajústalas si es necesario)
     
+    # Posición de la línea de firma (estas coordenadas son aproximadas; si no ves la firma, prueba cambiarlas)
+    firma_x = 180   # posición horizontal (en puntos)
+    firma_y = 220   # posición vertical (desde la parte inferior de la página; letra size 8-10)
+    # Para subir la firma, aumenta firma_y; para bajarla, disminuye.
+    # Si la firma queda fuera, prueba con firma_y = 300, 350, 400, etc.
+    
+    # Título de la sección (opcional)
     oc.setFont("Helvetica-Bold", 11)
-    oc.drawString(MX, y_firmas, "")
-    y_firmas -= 20
+    oc.drawString(MX, firma_y + 40, "FIRMAS")
     
+    # Verificar si la asignación está firmada
     if asignacion.get("firmado"):
-        firma_data = asignacion.get("")
+        firma_data = asignacion.get("firma_responsable")
         if firma_data and firma_data.startswith("data:image"):
             try:
+                import base64
+                from io import BytesIO
+                from reportlab.lib.utils import ImageReader
+                # Decodificar base64
                 img_data = base64.b64decode(firma_data.split(",")[1])
                 img = ImageReader(BytesIO(img_data))
-                # Dibuja la firma (ajusta width/height si es necesario)
-                oc.drawImage(img, MX, y_firmas-30, width=100, height=50, preserveAspectRatio=True, mask='auto')
-                oc.drawString(MX + 110, y_firmas-20, "")
+                # Dibujar la imagen en la posición de la línea de firma
+                oc.drawImage(img, firma_x, firma_y, width=100, height=40, preserveAspectRatio=True, mask='auto')
+                # Opcional: dibujar un texto indicando que está firmado
+                oc.drawString(firma_x + 110, firma_y + 15, "(firma digital)")
+                oc.setStrokeColor(colors.red)
+                oc.rect(firma_x, firma_y, 100, 40, stroke=1, fill=0)
             except Exception as e:
-                oc.drawString(MX, y_firmas-30, f"Error al cargar firma: {str(e)[:30]}")
+                oc.drawString(firma_x, firma_y, f"Error: {str(e)[:30]}")
         else:
-            oc.drawString(MX, y_firmas-30, "Firma del responsable: (digital)")
+            oc.drawString(firma_x, firma_y, "Firma digital (no cargada)")
     else:
-        oc.drawString(MX, y_firmas-30, "Firma del responsable: _________________________")
-
+        oc.drawString(firma_x, firma_y, "_________________________")
     
 
     oc.showPage()
