@@ -125,22 +125,21 @@ export function AsignacionesPage() {
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [signatureAsignacionId, setSignatureAsignacionId] = useState<string | null>(null);
 
-  const handleFirmar = async (id: string, firmaDataUrl: string) => {
+const handleFirmar = async (id: string, firmaDataUrl: string) => {
   try {
     await asignacionesApi.firmar(id, { firma: firmaDataUrl });
-    await ctrl.refetch(); // recarga la lista
+    await ctrl.refetch();
     setShowSignatureModal(false);
     setSignatureAsignacionId(null);
-    // Si el modal de previsualización estaba abierto, actualiza la URL sin regenerar el PDF
+    // Si el modal de previsualización estaba abierto, actualiza la URL
     if (ctrl.previewUrl) {
-      await ctrl.obtenerUrlActa // ← usa la función existente
+      await ctrl.obtenerUrlActa(id);  // usa false internamente
     }
   } catch (err) {
     console.error(err);
     alert('Error al firmar el acta');
   }
 };
-
 
   
   // Estados para edición
@@ -352,16 +351,16 @@ export function AsignacionesPage() {
                           H.Vida
                         </Button>
                       )}
-                      {ctrl.previewUrl && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                     {ctrl.previewUrl && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(255, 255, 255, 0.87)] p-4">
                           <div className="relative bg-white rounded-xl shadow-xl w-full max-w-4xl h-[80vh]">
                             <button
                               onClick={ctrl.cerrarPreview}
-                              className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                              className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 z-10"
                             >
                               <X size={20} />
                             </button>
-                            <iframe src={ctrl.previewUrl} className="w-full h-full rounded-xl" title="Vista previa PDF" />
+                            <iframe src={ctrl.previewUrl} className="w-full h-full rounded-xl" title="Acta de entrega" />
                           </div>
                         </div>
                       )}

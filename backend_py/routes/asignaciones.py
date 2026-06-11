@@ -277,14 +277,25 @@ async def firmar_asignacion(
     if not firma_base64:
         raise HTTPException(status_code=400, detail="Firma requerida")
 
-    # Solo actualiza la base de datos; NO regeneres el acta aquí
+    # Actualizar la base de datos
     await AsignacionModel.update(id, {
         "firma_responsable": firma_base64,
         "fecha_firma": date.today().isoformat(),
         "firmado": 1
     })
 
-    # Auditoría
+    # Regenerar el acta para incluir la firma (esto crea una nueva versión)
+    asignacion_actualizada = await AsignacionModel.find_by_id(id)
+    cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
+    accesorios = normalizar_accesorios_entregados(asignacion_actualizada.get("accesorios_entregados"))
+    await _generar_y_registrar_acta(
+        asignacion_actualizada,
+        accesorios_entregados=accesorios,
+        cargado_por=cargado_por,
+        regenerar=True
+    )
+
+    # Auditoría (CORREGIDO: pasar todos los argumentos requeridos)
     user_id = current_user.get("sub") or current_user.get("id")
     await log_action(
         user_id=user_id,

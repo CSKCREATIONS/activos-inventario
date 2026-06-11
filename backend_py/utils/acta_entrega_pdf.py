@@ -601,14 +601,14 @@ def generar_acta_entrega_pdf(
     # Usamos coordenadas absolutas según la plantilla (ajústalas si es necesario)
     
     # Posición de la línea de firma (estas coordenadas son aproximadas; si no ves la firma, prueba cambiarlas)
-    firma_x = 180   # posición horizontal (en puntos)
-    firma_y = 220   # posición vertical (desde la parte inferior de la página; letra size 8-10)
+    firma_x = 60   # posición horizontal (en puntos)
+    firma_y = 298  # posición vertical (desde la parte inferior de la página; letra size 8-10)
     # Para subir la firma, aumenta firma_y; para bajarla, disminuye.
     # Si la firma queda fuera, prueba con firma_y = 300, 350, 400, etc.
     
     # Título de la sección (opcional)
     oc.setFont("Helvetica-Bold", 11)
-    oc.drawString(MX, firma_y + 40, "FIRMAS")
+    oc.drawString(MX, firma_y + 40, "")
     
     # Verificar si la asignación está firmada
     if asignacion.get("firmado"):
@@ -624,15 +624,14 @@ def generar_acta_entrega_pdf(
                 # Dibujar la imagen en la posición de la línea de firma
                 oc.drawImage(img, firma_x, firma_y, width=100, height=40, preserveAspectRatio=True, mask='auto')
                 # Opcional: dibujar un texto indicando que está firmado
-                oc.drawString(firma_x + 110, firma_y + 15, "(firma digital)")
-                oc.setStrokeColor(colors.red)
+                oc.drawString(firma_x + 110, firma_y + 15, "")
                 oc.rect(firma_x, firma_y, 100, 40, stroke=1, fill=0)
             except Exception as e:
                 oc.drawString(firma_x, firma_y, f"Error: {str(e)[:30]}")
         else:
-            oc.drawString(firma_x, firma_y, "Firma digital (no cargada)")
+            oc.drawString(firma_x, firma_y, "")
     else:
-        oc.drawString(firma_x, firma_y, "_________________________")
+        oc.drawString(firma_x, firma_y, "")
     
 
     oc.showPage()
