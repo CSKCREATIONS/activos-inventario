@@ -250,18 +250,19 @@ class AsignacionModel:
 
                     # Insertar asignación
                     await cur.execute(
-                        """INSERT INTO asignaciones
-                        (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones,
-                            accesorios_entregados, acta_pdf, hoja_vida_pdf,
-                            firma_responsable, fecha_firma, firmado, sede)
-                        VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s, %s, %s, %s, %s)""",
-                        [
-                            new_id, usuario_id, equipo_id, fecha_asignacion,
-                            observaciones, accesorios_json,
-                            data.get("acta_pdf"), data.get("hoja_vida_pdf"),
-                            None, None, 0
-                        ]
-                    )
+                    """INSERT INTO asignaciones
+                    (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones,
+                        accesorios_entregados, acta_pdf, hoja_vida_pdf,
+                        firma_responsable, fecha_firma, firmado, sede)
+                    VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    [
+                        new_id, usuario_id, equipo_id, fecha_asignacion,
+                        observaciones, accesorios_json,
+                        data.get("acta_pdf"), data.get("hoja_vida_pdf"),
+                        None, None, 0,
+                        data.get("sede")   # ← valor para la sede (puede ser None)
+                    ]
+                )
                     # Cambiar estado del equipo
                     await cur.execute("UPDATE equipos SET estado = 'Asignado' WHERE id = %s", [equipo_id])
                 await conn.commit()

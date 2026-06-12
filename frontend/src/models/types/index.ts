@@ -78,7 +78,7 @@ export interface AccesorioAsignado {
 export interface Asignacion {
   id: string;
   usuario_id: string;
-  usuarios_ids?: string[];  // IDs adicionales de usuarios asignados
+  usuarios_ids?: string[];
   equipo_id: string;
   fecha_asignacion: string;
   fecha_devolucion?: string;
@@ -90,8 +90,7 @@ export interface Asignacion {
   firmado?: boolean;
   firma_responsable?: string;
   fecha_firma?: string;
-  sede?: string;
-
+  sede?: string;        // ← agregar
 }
 
 // ─── ACCESORIO ────────────────────────────────────────────────────────────────

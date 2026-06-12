@@ -8,14 +8,8 @@ import {
 } from '../../components/ui/index';
 import { Plus, RotateCcw, Link2, FileDown, Eye, X, Edit2, PenTool } from 'lucide-react';
 import { asignacionesApi } from '../../../services/api';
-
 import { SignaturePad } from '../../components/ui/SignaturePad';
-
-
-
-
-
-
+import { SEDES } from '../../../constants/sedes';
 
 const ASIGNACION_VARIANT = {
   Activa: 'green',
@@ -34,7 +28,6 @@ type AccesorioTexto = {
   modelo?: string;
 };
 
-
 const formatearAccesorio = (valor: string | AccesorioTexto | null | undefined): string => {
   if (!valor) return 'Accesorio';
   if (typeof valor === 'string') return valor.trim() || 'Accesorio';
@@ -46,16 +39,11 @@ const formatearAccesorio = (valor: string | AccesorioTexto | null | undefined): 
     .map((parte) => parte?.trim())
     .filter((parte): parte is string => Boolean(parte));
 
-  if (partes.length > 0) {
-    return partes.join(' ');
-  }
-
+  if (partes.length > 0) return partes.join(' ');
   const nombre = valor.nombre?.trim();
   if (nombre) return nombre;
-
   const nombreEquipo = valor.nombre_equipo?.trim();
   if (nombreEquipo) return nombreEquipo;
-
   return 'Accesorio';
 };
 
@@ -76,13 +64,8 @@ const crearAccesorioAsignado = (equipo: Equipo): AccesorioAsignado => {
 const normalizarAccesorioAsignado = (valor: string | AccesorioAsignado): AccesorioAsignado => {
   if (typeof valor === 'string') {
     const referencia = valor.trim() || 'Accesorio';
-    return {
-      id: referencia,
-      nombre: referencia,
-      referencia,
-    };
+    return { id: referencia, nombre: referencia, referencia };
   }
-
   const referencia = valor.referencia?.trim() || formatearAccesorio(valor);
   return {
     id: valor.id || referencia,
@@ -111,6 +94,8 @@ export function AsignacionesPage() {
       return v;
     }
   };
+
+  // Estado del formulario de creación
   const [form, setForm] = useState({
     usuario_id: '',
     equipo_id: '',
@@ -118,38 +103,34 @@ export function AsignacionesPage() {
     observaciones: '',
     accesorios_entregados: [] as AccesorioAsignado[],
     generar_hoja_vida: false,
+    sede: '',
   });
   const [error, setError] = useState('');
   const equipoSeleccionado = ctrl.equiposDisponibles.find((e) => e.id === form.equipo_id);
   const puedeGenerarHojaVida = equipoSeleccionado ? TIPOS_CON_HV.has(equipoSeleccionado.tipo_equipo) : false;
+
+  // Firma
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [signatureAsignacionId, setSignatureAsignacionId] = useState<string | null>(null);
 
-const handleFirmar = async (id: string, firmaDataUrl: string) => {
-  try {
-    await asignacionesApi.firmar(id, { firma: firmaDataUrl });
-    await ctrl.refetch();
-    setShowSignatureModal(false);
-    setSignatureAsignacionId(null);
-    // Si el modal de previsualización estaba abierto, actualiza la URL
-    if (ctrl.previewUrl) {
-      await ctrl.obtenerUrlActa(id);  // usa false internamente
-    }
-  } catch (err) {
-    console.error(err);
-    alert('Error al firmar el acta');
-  }
-};
-
-  
-  // Estados para edición
+  // Estado del modal de edición
   const [modalEditAbierto, setModalEditAbierto] = useState(false);
   const [editForm, setEditForm] = useState({
     usuarios_ids: [] as string[],
     accesorios_entregados: [] as AccesorioAsignado[],
     observaciones: '',
+    sede: '',
   });
 
+  // Filtro por sede (estado local)
+  const [filtroSede, setFiltroSede] = useState('');
+
+  // Aplicar filtro de sede a las asignaciones
+  const asignacionesFiltradasPorSede = ctrl.asignaciones.filter((a) => {
+    return !filtroSede || a.sede === filtroSede;
+  });
+
+  // Handlers
   const toggleAccesorio = (accesorio: AccesorioAsignado) => {
     setForm((f) => {
       const existe = f.accesorios_entregados.some((a) => a.id === accesorio.id);
@@ -163,8 +144,10 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
   };
 
   const handleCrear = async () => {
-    if (!form.usuario_id || !form.equipo_id) { setError('Usuario y equipo son requeridos.'); return; }
-
+    if (!form.usuario_id || !form.equipo_id) {
+      setError('Usuario y equipo son requeridos.');
+      return;
+    }
     const resultado = await ctrl.crearAsignacion({
       usuario_id: form.usuario_id,
       equipo_id: form.equipo_id,
@@ -172,8 +155,12 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
       observaciones: form.observaciones,
       accesorios_entregados: form.accesorios_entregados,
       generar_hoja_vida: form.generar_hoja_vida,
+      sede: form.sede,
     });
-    if (resultado.error) { setError(resultado.error); return; }
+    if (resultado.error) {
+      setError(resultado.error);
+      return;
+    }
     setError('');
   };
 
@@ -184,6 +171,7 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
         ? asignacion.accesorios_entregados.map((a) => normalizarAccesorioAsignado(a as string | AccesorioAsignado))
         : [],
       observaciones: asignacion.observaciones || '',
+      sede: asignacion.sede || '',
     });
     ctrl.setSelectedAsignacion(asignacion);
     setModalEditAbierto(true);
@@ -200,6 +188,7 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
       };
     });
   };
+
   const toggleAccesorioEditar = (accesorio: AccesorioAsignado) => {
     setEditForm((f) => {
       const existe = f.accesorios_entregados.some((a) => a.id === accesorio.id);
@@ -214,22 +203,37 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
 
   const handleGuardarEdicion = async () => {
     if (!ctrl.selectedAsignacion) return;
-    
     const resultado = await ctrl.editarAsignacion(ctrl.selectedAsignacion.id, {
       usuarios_ids: editForm.usuarios_ids,
       accesorios_entregados: editForm.accesorios_entregados,
       observaciones: editForm.observaciones,
+      sede: editForm.sede,   // ← Corregido: usa editForm.sede
     });
-    
     if (!resultado?.error) {
       setModalEditAbierto(false);
     }
   };
+
+  const handleFirmar = async (id: string, firmaDataUrl: string) => {
+    try {
+      await asignacionesApi.firmar(id, { firma: firmaDataUrl });
+      await ctrl.refetch();
+      setShowSignatureModal(false);
+      setSignatureAsignacionId(null);
+      if (ctrl.previewUrl) {
+        await ctrl.obtenerUrlActa(id);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error al firmar el acta');
+    }
+  };
+
   const previsualizarActa = async (id: string) => {
-  const { blob } = await asignacionesApi.downloadActa(id, true);
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
-};
+    const { blob } = await asignacionesApi.downloadActa(id, true);
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  };
 
   return (
     <div className="space-y-4">
@@ -249,7 +253,7 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
         </Card>
       </div>
 
-      {/* Toolbar */}
+      {/* Toolbar con filtros */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <SearchInput value={ctrl.busqueda} onChange={ctrl.setBusqueda} placeholder="Buscar por usuario o placa..." />
         <select
@@ -262,6 +266,15 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
           <option value="Devuelta">Devuelta</option>
           <option value="Extraviada">Extraviada</option>
         </select>
+        {/* Filtro por sede */}
+        <select
+          value={filtroSede}
+          onChange={(e) => setFiltroSede(e.target.value)}
+          className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Todas las sedes</option>
+          {SEDES.map(sede => <option key={sede} value={sede}>{sede}</option>)}
+        </select>
         <div className="sm:ml-auto">
           <Button
             icon={<Plus size={16} />}
@@ -273,6 +286,7 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
                 observaciones: '',
                 accesorios_entregados: [],
                 generar_hoja_vida: false,
+                sede: '',
               });
               setError('');
               ctrl.setModalAbierto(true);
@@ -284,33 +298,36 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
         </div>
       </div>
 
-      {/* Tabla */}
+      {/* Tabla de asignaciones */}
       <Card>
         {ctrl.asignaciones.length === 0 ? (
           <EmptyState mensaje="No se encontraron asignaciones." icon={<Link2 size={40} />} />
         ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Usuario</Th>
-                <Th>Área</Th>
-                <Th>Equipo</Th>
-                <Th>Tipo</Th>
-                <Th>Fecha asignación</Th>
-                <Th>Fecha devolución</Th>
-                <Th>Estado</Th>
-                <Th>Documentos</Th>
-                <Th>Acciones</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {ctrl.asignaciones.map((a) => (
-                <tr key={a.id} className="hover:bg-slate-50 transition-colors">
-                  <Td className="font-medium">
-                    <div>{a.usuario?.nombre ?? '—'}</div>
-                    <div className="text-xs text-slate-500">{a.usuario?.cargo ?? ''}</div>
-                  </Td>
+          <>
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Usuario</Th>
+                  <Th>Área</Th>
+                  <Th>Sede</Th>
+                  <Th>Equipo</Th>
+                  <Th>Tipo</Th>
+                  <Th>Fecha asignación</Th>
+                  <Th>Fecha devolución</Th>
+                  <Th>Estado</Th>
+                  <Th>Documentos</Th>
+                  <Th>Acciones</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {asignacionesFiltradasPorSede.map((a) => (
+                  <tr key={a.id} className="hover:bg-slate-50 transition-colors">
+                    <Td className="font-medium">
+                      <div>{a.usuario?.nombre ?? '—'}</div>
+                      <div className="text-xs text-slate-500">{a.usuario?.cargo ?? ''}</div>
+                    </Td>
                     <Td>{a.usuario?.area ?? '—'}</Td>
+                    <Td>{a.sede || '—'}</Td>
                     <Td className="font-mono text-blue-700">
                       <div>{a.equipo?.placa ?? '—'}</div>
                       <div className="text-xs text-slate-500">{[a.equipo?.marca, a.equipo?.modelo].filter(Boolean).join(' ')}</div>
@@ -318,73 +335,60 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
                     <Td>{a.equipo?.tipo_equipo ?? '—'}</Td>
                     <Td>{formatDate(a.fecha_asignacion)}</Td>
                     <Td>{a.fecha_devolucion ? formatDate(a.fecha_devolucion) : <span className="text-emerald-600 font-medium">Activa</span>}</Td>
-                  <Td>
-                    <Badge variant={ASIGNACION_VARIANT[a.estado] ?? 'gray'}>
-                      {a.estado}
-                    </Badge>
-                  </Td>
-                  <Td>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
+                    <Td>
+                      <Badge variant={ASIGNACION_VARIANT[a.estado] ?? 'gray'}>
+                        {a.estado}
+                      </Badge>
+                    </Td>
+                    <Td>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
                           variant="outline"
                           size="sm"
                           icon={<Eye size={12} />}
                           onClick={() => ctrl.obtenerUrlActa(a.id)}
                         >
                           Previsualizar
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        icon={<FileDown size={12} />}
-                        onClick={() => ctrl.descargarActa(a.id)}
-                      >
-                        Acta
-                      </Button>
-                      {a.equipo_id && (
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
                           icon={<FileDown size={12} />}
-                          onClick={() => ctrl.descargarHojaVida(a.equipo_id, a.equipo?.placa)}
+                          onClick={() => ctrl.descargarActa(a.id)}
                         >
-                          H.Vida
+                          Acta
                         </Button>
-                      )}
-                     {ctrl.previewUrl && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(255, 255, 255, 0.87)] p-4">
-                          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-4xl h-[80vh]">
-                            <button
-                              onClick={ctrl.cerrarPreview}
-                              className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 z-10"
-                            >
-                              <X size={20} />
-                            </button>
-                            <iframe src={ctrl.previewUrl} className="w-full h-full rounded-xl" title="Acta de entrega" />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </Td>
-                  <Td>
-                    {a.estado === 'Activa' && a.equipo_id && (
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          icon={<Edit2 size={12} />}
-                          onClick={() => abrirModalEditar(a)}
-                        >
-                          Editar
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          icon={<RotateCcw size={12} />}
-                          onClick={() => ctrl.registrarDevolucion(a.id)}
-                        >
-                          Devolver
-                        </Button>
+                        {a.equipo_id && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            icon={<FileDown size={12} />}
+                            onClick={() => ctrl.descargarHojaVida(a.equipo_id, a.equipo?.placa)}
+                          >
+                            H.Vida
+                          </Button>
+                        )}
+                      </div>
+                    </Td>
+                    <Td>
+                      {a.estado === 'Activa' && a.equipo_id && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            icon={<Edit2 size={12} />}
+                            onClick={() => abrirModalEditar(a)}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            icon={<RotateCcw size={12} />}
+                            onClick={() => ctrl.registrarDevolucion(a.id)}
+                          >
+                            Devolver
+                          </Button>
                           <Button
                             variant="outline"
                             size="sm"
@@ -396,15 +400,34 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
                           >
                             Firmar
                           </Button>
-                      </div>
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+                        </div>
+                      )}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            <p className="text-sm text-slate-500 px-4 py-3 border-t">
+              Mostrando <strong>{asignacionesFiltradasPorSede.length}</strong> de <strong>{ctrl.asignaciones.length}</strong> asignaciones
+            </p>
+          </>
         )}
       </Card>
+
+      {/* Modal de previsualización */}
+      {ctrl.previewUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.7)] p-4">
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-4xl h-[80vh]">
+            <button
+              onClick={ctrl.cerrarPreview}
+              className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 z-10"
+            >
+              <X size={20} />
+            </button>
+            <iframe src={ctrl.previewUrl} className="w-full h-full rounded-xl" title="Acta de entrega" />
+          </div>
+        </div>
+      )}
 
       {/* Modal nueva asignación */}
       <Modal abierto={ctrl.modalAbierto} onCerrar={() => ctrl.setModalAbierto(false)} titulo="Nueva asignación" size="md">
@@ -416,13 +439,13 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
             onChange={(e) => setForm((f) => ({ ...f, usuario_id: e.target.value }))}
             options={ctrl.usuarios.map((u) => ({ value: u.id, label: `${u.nombre} – ${u.area}` }))}
           />
-          
           <SelectField
             label="Equipo disponible *"
             value={form.equipo_id}
             onChange={(e) => setForm((f) => ({ ...f, equipo_id: e.target.value, generar_hoja_vida: false }))}
             options={ctrl.equiposDisponibles.map((e) => ({ value: e.id, label: `${e.placa} – ${e.tipo_equipo} ${e.marca ?? ''}` }))}
           />
+          <SelectField label="Sede" value={form.sede ?? ''} onChange={(e) => setForm((f) => ({ ...f, sede: e.target.value }))} options={SEDES.map((s) => ({ value: s, label: s }))} />
           {puedeGenerarHojaVida && (
             <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 sm:col-span-2">
               <input
@@ -445,10 +468,8 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
             value={form.observaciones}
             onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))}
           />
-
           <div className="space-y-4">
             <p className="text-sm font-medium text-slate-700">Accesorios/Equipos adicionales</p>
-            
             {Object.keys(ctrl.accesoriosDisponiblesAgrupados).length === 0 ? (
               <p className="text-sm text-slate-500 italic">No hay accesorios disponibles para asignar</p>
             ) : (
@@ -482,8 +503,6 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
                 ))}
               </div>
             )}
-
-            {/* Resumen de seleccionados */}
             {form.accesorios_entregados.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-slate-600">Seleccionados:</p>
@@ -519,7 +538,6 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
       {/* Modal editar asignación */}
       <Modal abierto={modalEditAbierto} onCerrar={() => setModalEditAbierto(false)} titulo="Editar asignación" size="md">
         <div className="space-y-4">
-          {/* Usuarios adicionales */}
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate-700">Usuarios asignados</p>
             <div className="space-y-2 max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-3">
@@ -539,8 +557,6 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
               ))}
             </div>
           </div>
-
-          {/* Accesorios */}
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate-700">Accesorios/Equipos adicionales</p>
             {Object.keys(ctrl.accesoriosDisponiblesAgrupados).length === 0 ? (
@@ -575,7 +591,6 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
                 ))}
               </div>
             )}
-
             {editForm.accesorios_entregados.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-slate-600">Seleccionados:</p>
@@ -599,20 +614,25 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
               </div>
             )}
           </div>
-
-          {/* Observaciones */}
           <Field
             label="Observaciones"
             value={editForm.observaciones}
             onChange={(e) => setEditForm((f) => ({ ...f, observaciones: e.target.value }))}
           />
-        </div>
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
-          <Button variant="outline" onClick={() => setModalEditAbierto(false)}>Cancelar</Button>
-          <Button onClick={handleGuardarEdicion} loading={ctrl.loading}>Guardar cambios</Button>
+          <SelectField
+            label="Sede"
+            value={editForm.sede ?? ''}
+            onChange={(e) => setEditForm(f => ({ ...f, sede: e.target.value }))}
+            options={SEDES.map((s) => ({ value: s, label: s }))}
+          />
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button variant="outline" onClick={() => setModalEditAbierto(false)}>Cancelar</Button>
+            <Button onClick={handleGuardarEdicion} loading={ctrl.loading}>Guardar cambios</Button>
+          </div>
         </div>
       </Modal>
 
+      {/* Modal de firma */}
       <Modal
         abierto={showSignatureModal}
         onCerrar={() => setShowSignatureModal(false)}
@@ -626,4 +646,4 @@ const handleFirmar = async (id: string, firmaDataUrl: string) => {
       </Modal>
     </div>
   );
-}
+} 

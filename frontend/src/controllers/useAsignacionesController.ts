@@ -102,6 +102,7 @@ export function useAsignacionesController() {
     fecha_asignacion: string;
     accesorios_entregados?: (string | AccesorioAsignado)[];
     generar_hoja_vida?: boolean;
+    sede?: string; 
   }) => {
     try {
       console.log("[Asignaciones] Datos siendo enviados al backend:", data);

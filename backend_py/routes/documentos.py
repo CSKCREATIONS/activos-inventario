@@ -9,6 +9,8 @@ from utils.files import safe_filename
 from utils.audit import log_action
 from dependencies import get_current_user
 
+
+
 router = APIRouter()
 
 UPLOADS_DIR = os.getenv("UPLOADS_DIR", "uploads")
@@ -87,7 +89,8 @@ async def create(
     equipo_id: str = Form(None),
     asignacion_id: str = Form(None),
     usuario_id: str = Form(None),
-    area: str = Form(None),   # ← nuevo
+    area: str = Form(None), 
+    sede: str = Form(None),
     url: str = Form(None),
     version: int = Form(1),
     cargado_por: str = Form(None),
@@ -142,6 +145,7 @@ async def update(
     equipo_id: str = Form(None),
     asignacion_id: str = Form(None),
     usuario_id: str = Form(None),
+    sede: str = Form(None),
     url: str = Form(None),
     version: int = Form(None),
     cargado_por: str = Form(None),
