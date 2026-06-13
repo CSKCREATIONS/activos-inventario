@@ -1,5 +1,4 @@
-// CONTROLLER: Reportes
-// Genera los datos para los reportes exportables — datos desde la API REST.
+
 
 import { useMemo, useEffect, useCallback, useState } from 'react';
 import { useEquiposStore } from '../models/stores/useEquiposStore';
@@ -43,26 +42,56 @@ export function useReportesController() {
 
   // ── Reporte: inventario completo ──────────────────────────────────────────
   const reporteInventario = useMemo(() => {
-    return equipos.map((e) => {
-      const asignacion = asignaciones.find((a) => a.equipo_id === e.id && a.estado === 'Activa');
-      const usuario = asignacion ? usuarios.find((u) => u.id === asignacion.usuario_id) : null;
-      return {
-        placa: e.placa,
-        serial: e.serial ?? '',
-        tipo: e.tipo_equipo,
-        marca: e.marca ?? '',
-        modelo: e.modelo ?? '',
-        so: e.sistema_operativo ?? '',
-        criticidad: e.criticidad,
-        confidencialidad: e.confidencialidad,
-        estado: e.estado,
-        responsable: usuario?.nombre ?? 'Sin asignar',
-        area: usuario?.area ?? '',
-        es_rentado: e.es_rentado ? 'Sí' : 'No',
-        fecha_registro: e.fecha_registro,
-      };
-    });
-  }, [equipos, asignaciones, usuarios]);
+  return equipos.map((e) => {
+    const asignacion = asignaciones.find((a) => a.equipo_id === e.id && a.estado === 'Activa');
+    let responsable = 'Sin asignar';
+    let tipoResponsable = '';
+    let area = '';
+
+    if (asignacion) {
+      const usuario = usuarios.find((u) => u.id === asignacion.usuario_id);
+      if (usuario) {
+        responsable = usuario.nombre;
+        tipoResponsable = usuario.tipo_usuario === 'empleado' ? 'Empleado' :
+                          usuario.tipo_usuario === 'cliente' ? 'Cliente' : 'Proyecto';
+        area = usuario.area || '';
+      } else {
+        // fallback por si el usuario no existe (raro)
+        tipoResponsable = asignacion.tipo_usuario_asignado || '';
+        if (tipoResponsable === 'empleado') tipoResponsable = 'Empleado';
+        else if (tipoResponsable === 'cliente') tipoResponsable = 'Cliente';
+        else if (tipoResponsable === 'proyecto') tipoResponsable = 'Proyecto';
+      }
+    }
+
+    // Accesorios entregados
+    let accesoriosStr = '';
+    if (asignacion && asignacion.accesorios_entregados) {
+      accesoriosStr = asignacion.accesorios_entregados
+        .map((a) => (typeof a === 'string' ? a : a.nombre || a.referencia || ''))
+        .join(', ');
+    }
+
+    return {
+      placa: e.placa,
+      serial: e.serial ?? '',
+      tipo: e.tipo_equipo,
+      marca: e.marca ?? '',
+      modelo: e.modelo ?? '',
+      so: e.sistema_operativo ?? '',
+      sede: e.sede ?? '',
+      accesorios: accesoriosStr,
+      responsable: responsable,
+      tipo_responsable: tipoResponsable,   // ← nuevo campo
+      area: area,
+      criticidad: e.criticidad,
+      confidencialidad: e.confidencialidad,
+      estado: e.estado,
+      es_rentado: e.es_rentado ? 'Sí' : 'No',
+      fecha_registro: e.fecha_registro,
+    };
+  });
+}, [equipos, asignaciones, usuarios]);
 
   // ── Reporte: equipos sin documentos ──────────────────────────────────────
   const reporteSinDocs = useMemo(() => {

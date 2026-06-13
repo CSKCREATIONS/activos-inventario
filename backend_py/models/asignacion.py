@@ -1,10 +1,11 @@
 import uuid
 import json
 from datetime import date
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 
 from config.db import get_pool
 from models.asignacion_usuario import AsignacionUsuarioModel
+from models.usuario import UsuarioModel
 
 
 def _parse_accesorios_entregados(row: dict) -> list:
@@ -47,39 +48,6 @@ class AsignacionModel:
         pool = await get_pool()
         sql = """
             SELECT a.*,
-                u.nombre AS usuario_nombre, u.cargo, u.area,
-                e.placa, e.serial, e.marca, e.modelo, e.tipo_equipo, e.estado AS equipo_estado
-            FROM asignaciones a
-            JOIN usuarios u ON a.usuario_id = u.id
-            JOIN equipos  e ON a.equipo_id = e.id
-            WHERE 1=1
-        """
-        params = []
-        if busqueda:
-            sql += " AND (u.nombre LIKE %s OR e.placa LIKE %s OR e.tipo_equipo LIKE %s)"
-            q = f"%{busqueda}%"
-            params.extend([q, q, q])
-        if estado:
-            sql += " AND a.estado = %s"
-            params.append(estado)
-        sql += " ORDER BY a.fecha_asignacion DESC"
-
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(sql, params)
-                rows = await cur.fetchall()
-                if not rows:
-                    return []
-                ids = [row["id"] for row in rows]
-                usuarios_por_asignacion = await AsignacionUsuarioModel.get_by_asignaciones(ids)  # ← dict
-                result = []
-                for row in rows:
-                    item = _map_asignacion(row)
-                    item["usuarios_ids"] = usuarios_por_asignacion.get(item["id"], [])
-                    result.append(item)
-                return result
-        sql = """
-            SELECT a.*,
                    u.nombre AS usuario_nombre, u.cargo, u.area,
                    e.placa, e.serial, e.marca, e.modelo, e.tipo_equipo, e.estado AS equipo_estado
             FROM asignaciones a
@@ -104,12 +72,11 @@ class AsignacionModel:
                 if not rows:
                     return []
                 ids = [row["id"] for row in rows]
-                # Cargar todos los usuarios adicionales de una sola vez
-                usuarios_dict = await AsignacionUsuarioModel.get_by_asignaciones([item["id"]])
+                usuarios_por_asignacion = await AsignacionUsuarioModel.get_by_asignaciones(ids)
                 result = []
                 for row in rows:
                     item = _map_asignacion(row)
-                    item["usuarios_ids"] = [u["usuario_id"] for u in usuarios_dict.get(item["id"], [])]
+                    item["usuarios_ids"] = usuarios_por_asignacion.get(item["id"], [])
                     result.append(item)
                 return result
 
@@ -135,14 +102,73 @@ class AsignacionModel:
                 usuarios = await AsignacionUsuarioModel.get_by_asignacion(item["id"])
                 item["usuarios_ids"] = [u["usuario_id"] for u in usuarios]
                 return item
-       
+
+    @staticmethod
+    async def create(data: dict) -> Optional[dict]:
+        equipo_id = data["equipo_id"]
+        usuario_id = data["usuario_id"]
+        fecha_asignacion = data["fecha_asignacion"]
+        observaciones = data.get("observaciones")
+        accesorios_json = None
+        if accesorios := data.get("accesorios_entregados"):
+            accesorios_json = json.dumps(accesorios, ensure_ascii=False) if isinstance(accesorios, list) else str(accesorios)
+
+        # Obtener tipo de usuario
+        usuario = await UsuarioModel.find_by_id(usuario_id)
+        tipo_usuario_asignado = usuario["tipo_usuario"] if usuario else "empleado"
+
+        new_id = str(uuid.uuid4())
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.begin()
+            try:
+                async with conn.cursor() as cur:
+                    # Bloquear equipo
+                    await cur.execute("SELECT estado FROM equipos WHERE id = %s FOR UPDATE", [equipo_id])
+                    equipo_row = await cur.fetchone()
+                    if not equipo_row:
+                        raise ValueError("El equipo no existe.")
+                    if equipo_row["estado"] != "Disponible":
+                        raise ValueError("El equipo no está disponible para asignación.")
+
+                    # Insertar asignación
+                    await cur.execute(
+                        """INSERT INTO asignaciones
+                           (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones,
+                            accesorios_entregados, acta_pdf, hoja_vida_pdf,
+                            firma_responsable, fecha_firma, firmado, sede,
+                            tipo_usuario_asignado)
+                           VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        [
+                            new_id, usuario_id, equipo_id, fecha_asignacion,
+                            observaciones, accesorios_json,
+                            data.get("acta_pdf"), data.get("hoja_vida_pdf"),
+                            None, None, 0,
+                            data.get("sede"),
+                            tipo_usuario_asignado
+                        ]
+                    )
+                    # Cambiar estado del equipo
+                    await cur.execute("UPDATE equipos SET estado = 'Asignado' WHERE id = %s", [equipo_id])
+                await conn.commit()
+            except Exception as e:
+                await conn.rollback()
+                raise
+
+        # Insertar usuarios adicionales (tabla puente)
+        if usuarios_adicionales := data.get("usuarios_ids"):
+            for uid in usuarios_adicionales:
+                await AsignacionUsuarioModel.create(new_id, uid, "secundario")
+
+        return await AsignacionModel.find_by_id(new_id)
+
     @staticmethod
     async def update(id: str, data: dict) -> Optional[dict]:
-        # Campos permitidos para actualización directa
         allowed = {
             "observaciones", "accesorios_entregados", "estado", "acta_pdf",
-            "hoja_vida_pdf", "fecha_devolucion", "firma_responsable", "fecha_firma", "firmado", "sede",  
-
+            "hoja_vida_pdf", "fecha_devolucion", "firma_responsable", "fecha_firma", "firmado",
+            "sede"
         }
         updates = []
         values = []
@@ -153,6 +179,16 @@ class AsignacionModel:
                     values.append(json.dumps(value, ensure_ascii=False))
                 else:
                     values.append(value)
+
+        # Si cambia el usuario_id, recalcular tipo_usuario_asignado
+        if "usuario_id" in data:
+            usuario = await UsuarioModel.find_by_id(data["usuario_id"])
+            tipo = usuario["tipo_usuario"] if usuario else "empleado"
+            updates.append("tipo_usuario_asignado = %s")
+            values.append(tipo)
+            # También actualizar el usuario_id en la tabla
+            updates.append("usuario_id = %s")
+            values.append(data["usuario_id"])
 
         if updates:
             values.append(id)
@@ -173,18 +209,7 @@ class AsignacionModel:
         return await AsignacionModel.find_by_id(id)
 
     @staticmethod
-    async def get_equipos_disponibles() -> List[dict]:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT * FROM equipos WHERE estado = 'Disponible' ORDER BY placa ASC"
-                )
-                return await cur.fetchall()
-            
-
-    @staticmethod
-    async def registrar_devolucion(id: str) -> dict | None:
+    async def registrar_devolucion(id: str) -> Optional[dict]:
         asignacion = await AsignacionModel.find_by_id(id)
         if not asignacion:
             raise ValueError("Asignación no encontrada.")
@@ -206,7 +231,6 @@ class AsignacionModel:
                     row = await cur.fetchone()
                     if not row or row["estado"] != "Activa":
                         raise ValueError("La asignación ya no está activa.")
-
                     await cur.execute(
                         "UPDATE asignaciones SET estado = 'Devuelta', fecha_devolucion = %s WHERE id = %s",
                         [fecha_devolucion, id]
@@ -220,59 +244,13 @@ class AsignacionModel:
                 await conn.rollback()
                 raise
         return await AsignacionModel.find_by_id(id)
-    
-
 
     @staticmethod
-    async def create(data: dict) -> dict | None:
-        equipo_id = data["equipo_id"]
-        usuario_id = data["usuario_id"]
-        fecha_asignacion = data["fecha_asignacion"]
-        observaciones = data.get("observaciones")
-        accesorios_json = None
-        if accesorios := data.get("accesorios_entregados"):
-            accesorios_json = json.dumps(accesorios, ensure_ascii=False) if isinstance(accesorios, list) else str(accesorios)
-
-        new_id = str(uuid.uuid4())
-
+    async def get_equipos_disponibles() -> List[dict]:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            await conn.begin()   # ← Aquí, no async with
-            try:
-                async with conn.cursor() as cur:
-                    # Bloquear equipo
-                    await cur.execute("SELECT estado FROM equipos WHERE id = %s FOR UPDATE", [equipo_id])
-                    equipo_row = await cur.fetchone()
-                    if not equipo_row:
-                        raise ValueError("El equipo no existe.")
-                    if equipo_row["estado"] != "Disponible":
-                        raise ValueError("El equipo no está disponible para asignación.")
-
-                    # Insertar asignación
-                    await cur.execute(
-                    """INSERT INTO asignaciones
-                    (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones,
-                        accesorios_entregados, acta_pdf, hoja_vida_pdf,
-                        firma_responsable, fecha_firma, firmado, sede)
-                    VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s, %s, %s, %s, %s, %s)""",
-                    [
-                        new_id, usuario_id, equipo_id, fecha_asignacion,
-                        observaciones, accesorios_json,
-                        data.get("acta_pdf"), data.get("hoja_vida_pdf"),
-                        None, None, 0,
-                        data.get("sede")   # ← valor para la sede (puede ser None)
-                    ]
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT * FROM equipos WHERE estado = 'Disponible' ORDER BY placa ASC"
                 )
-                    # Cambiar estado del equipo
-                    await cur.execute("UPDATE equipos SET estado = 'Asignado' WHERE id = %s", [equipo_id])
-                await conn.commit()
-            except Exception as e:
-                await conn.rollback()
-                raise
-
-        # Insertar usuarios adicionales (tabla puente)
-        if usuarios_adicionales := data.get("usuarios_ids"):
-            for uid in usuarios_adicionales:
-                await AsignacionUsuarioModel.create(new_id, uid, "secundario")
-
-        return await AsignacionModel.find_by_id(new_id)
+                return await cur.fetchall()

@@ -1,5 +1,5 @@
 // VIEW: Página Usuarios
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useUsuariosController } from '../../../controllers/useUsuariosController';
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
@@ -26,6 +26,13 @@ export function UsuariosPage() {
     'inHouse',
   ];
 
+  const [filtroTipoUsuario, setFiltroTipoUsuario] = useState('');
+
+   const usuariosFiltrados = useMemo(() => {
+  if (!filtroTipoUsuario) return ctrl.usuarios;
+  return ctrl.usuarios.filter(u => u.tipo_usuario === filtroTipoUsuario);
+    }, [ctrl.usuarios, filtroTipoUsuario]);
+
   const handleGuardar = () => {
     const newErrors: Record<string, string> = {};
     if (!form.nombre) newErrors.nombre = "El nombre es requerido";
@@ -51,6 +58,8 @@ export function UsuariosPage() {
     return <UsuarioDetalle usuarioId={vistaDetalle} onVolver={() => setVistaDetalle(null)} />;
   }
 
+ 
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -71,6 +80,16 @@ export function UsuariosPage() {
           <option value="">Todas las sedes</option>
           {SEDES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+        <select
+          value={filtroTipoUsuario}
+          onChange={(e) => setFiltroTipoUsuario(e.target.value)}
+          className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white"
+        >
+          <option value="">Todos los tipos</option>
+          <option value="empleado">Empleado</option>
+          <option value="cliente">Cliente</option>
+          <option value="proyecto">Proyecto</option>
+        </select>
         <div className="sm:ml-auto">
           <Button icon={<Plus size={16} />} onClick={() => { setForm({ activo: true }); setErrors({}); ctrl.abrirCrear(); }} className="w-full sm:w-auto">
             Nuevo usuario
@@ -79,17 +98,19 @@ export function UsuariosPage() {
       </div>
 
       <p className="text-sm text-slate-500">
-        Mostrando <strong>{ctrl.usuarios.length}</strong> de <strong>{ctrl.totalUsuarios}</strong> usuarios
+        Mostrando <strong>{usuariosFiltrados.length}</strong> de <strong>{ctrl.totalUsuarios}</strong> usuarios
       </p>
+      
 
       <Card>
-        {ctrl.usuarios.length === 0 ? (
-          <EmptyState mensaje="No se encontraron usuarios." icon={<Users size={40} />} />
-        ) : (
+        {usuariosFiltrados.length === 0 ? (
+            <EmptyState mensaje="No se encontraron usuarios." icon={<Users size={40} />} />
+          ) : (
           <Table>
             <thead>
               <tr>
                 <Th>Nombre</Th>
+                <Th>Tipo</Th>
                 <Th>Cargo</Th>
                 <Th>Área</Th>
                 <Th>Sede</Th>
@@ -100,7 +121,7 @@ export function UsuariosPage() {
               </tr>
             </thead>
             <tbody>
-              {ctrl.usuarios.map((u) => (
+              {usuariosFiltrados.map((u) => (
                 <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                   <Td>
                     <div className="flex items-center gap-2">
@@ -109,6 +130,15 @@ export function UsuariosPage() {
                       </div>
                       <span className="font-medium text-slate-800">{u.nombre}</span>
                     </div>
+                  </Td>
+                  <Td>
+                    <Badge variant={
+                      u.tipo_usuario === 'empleado' ? 'blue' :
+                      u.tipo_usuario === 'cliente' ? 'green' : 'orange'
+                    }>
+                      {u.tipo_usuario === 'empleado' ? 'Empleado' :
+                      u.tipo_usuario === 'cliente' ? 'Cliente' : 'Proyecto'}
+                    </Badge>
                   </Td>
                   <Td>{u.cargo}</Td>
                   <Td><Badge variant="indigo">{u.area}</Badge></Td>
@@ -153,6 +183,16 @@ export function UsuariosPage() {
             <Field label="Área *" value={form.area ?? ''} onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))} />
             {errors.area && <p className="text-red-600 text-xs mt-1">{errors.area}</p>}
           </div>
+          <SelectField
+            label="Tipo de usuario"
+            value={form.tipo_usuario ?? 'empleado'}
+            onChange={(e) => setForm((f) => ({ ...f, tipo_usuario: e.target.value as 'empleado' | 'cliente' | 'proyecto' }))}
+            options={[
+              { value: 'empleado', label: 'Empleado' },
+              { value: 'cliente', label: 'Cliente' },
+              { value: 'proyecto', label: 'Proyecto' }
+            ]}
+          />
           <SelectField
             label="Sede"
             value={form.sede ?? ''}

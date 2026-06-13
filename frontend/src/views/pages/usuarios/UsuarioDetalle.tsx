@@ -31,6 +31,13 @@ export function UsuarioDetalle({ usuarioId, onVolver }: Props) {
               <Badge variant="indigo">{usuario.area}</Badge>
               {usuario.sede && <Badge variant="amber">{usuario.sede}</Badge>}
               <Badge variant={usuario.activo ? 'green' : 'gray'}>{usuario.activo ? 'Activo' : 'Inactivo'}</Badge>
+              <Badge variant={
+                usuario.tipo_usuario === 'empleado' ? 'blue' :
+                usuario.tipo_usuario === 'cliente' ? 'green' : 'orange'
+              }>
+                {usuario.tipo_usuario === 'empleado' ? 'Empleado' :
+                usuario.tipo_usuario === 'cliente' ? 'Cliente' : 'Proyecto'}
+              </Badge>
             </div>
           </div>
         </div>

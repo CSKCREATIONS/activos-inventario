@@ -1,5 +1,5 @@
 // VIEW: Página Asignaciones
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAsignacionesController } from '../../../controllers/useAsignacionesController';
 import type { Asignacion, AccesorioAsignado, Equipo, TipoEquipo } from '../../../models/types/index';
 
@@ -176,6 +176,18 @@ export function AsignacionesPage() {
     ctrl.setSelectedAsignacion(asignacion);
     setModalEditAbierto(true);
   };
+  const [filtroTipoResponsable, setFiltroTipoResponsable] = useState('');
+
+  const asignacionesFiltradas = useMemo(() => {
+  let filtradas = ctrl.asignaciones;
+  if (filtroSede) {
+    filtradas = filtradas.filter(a => a.sede === filtroSede);
+  }
+  if (filtroTipoResponsable) {
+    filtradas = filtradas.filter(a => a.tipo_usuario_asignado === filtroTipoResponsable);
+  }
+  return filtradas;
+}, [ctrl.asignaciones, filtroSede, filtroTipoResponsable]);
 
   const toggleUsuarioEditar = (usuarioId: string) => {
     setEditForm((f) => {
@@ -275,6 +287,16 @@ export function AsignacionesPage() {
           <option value="">Todas las sedes</option>
           {SEDES.map(sede => <option key={sede} value={sede}>{sede}</option>)}
         </select>
+        <select
+          value={filtroTipoResponsable}
+          onChange={(e) => setFiltroTipoResponsable(e.target.value)}
+          className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white"
+        >
+          <option value="">Todos los tipos</option>
+          <option value="empleado">Empleado</option>
+          <option value="cliente">Cliente</option>
+          <option value="proyecto">Proyecto</option>
+        </select>
         <div className="sm:ml-auto">
           <Button
             icon={<Plus size={16} />}
@@ -308,6 +330,7 @@ export function AsignacionesPage() {
               <thead>
                 <tr>
                   <Th>Usuario</Th>
+                  <Th>Tipo responsable</Th>
                   <Th>Área</Th>
                   <Th>Sede</Th>
                   <Th>Equipo</Th>
@@ -325,6 +348,15 @@ export function AsignacionesPage() {
                     <Td className="font-medium">
                       <div>{a.usuario?.nombre ?? '—'}</div>
                       <div className="text-xs text-slate-500">{a.usuario?.cargo ?? ''}</div>
+                    </Td>
+                    <Td>
+                      <Badge variant={
+                        a.tipo_usuario_asignado === 'empleado' ? 'blue' :
+                        a.tipo_usuario_asignado === 'cliente' ? 'green' : 'orange'
+                      }>
+                        {a.tipo_usuario_asignado === 'empleado' ? 'Empleado' :
+                        a.tipo_usuario_asignado === 'cliente' ? 'Cliente' : 'Proyecto'}
+                      </Badge>
                     </Td>
                     <Td>{a.usuario?.area ?? '—'}</Td>
                     <Td>{a.sede || '—'}</Td>

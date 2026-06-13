@@ -50,23 +50,24 @@ class UsuarioModel:
             async with conn.cursor() as cur:
                 try:
                     await cur.execute(
-                        """INSERT INTO usuarios
-                           (id, nombre, cargo, proceso, grupo_asignado, area, correo, ubicacion, sede, activo, fecha_registro)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                        [
-                            new_id,
-                            data.get("nombre"),
-                            data.get("cargo"),
-                            data.get("proceso"),
-                            data.get("grupo_asignado"),
-                            data.get("area"),
-                            data.get("correo"),
-                            data.get("ubicacion"),
-                            data.get("sede"),
-                            1 if data.get("activo", True) else 0,
-                            fecha_registro,
-                        ],
-                    )
+                    """INSERT INTO usuarios
+                    (id, nombre, cargo, proceso, grupo_asignado, area, correo, ubicacion, sede, activo, fecha_registro, tipo_usuario)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    [
+                        new_id,
+                        data.get("nombre"),
+                        data.get("cargo"),
+                        data.get("proceso"),
+                        data.get("grupo_asignado"),
+                        data.get("area"),
+                        data.get("correo"),
+                        data.get("ubicacion"),
+                        data.get("sede"),
+                        1 if data.get("activo", True) else 0,
+                        fecha_registro,
+                        data.get("tipo_usuario", "empleado"),
+                    ]
+                )
                 except Exception as e:
                     # Compatibilidad: si la columna 'sede' no existe, insertar sin ella
                     if "Unknown column" in str(e) and "sede" in str(e):
@@ -93,7 +94,7 @@ class UsuarioModel:
 
     @staticmethod
     async def update(id: str, data: dict) -> dict | None:
-        allowed = ["nombre", "cargo", "proceso", "grupo_asignado", "area", "correo", "ubicacion", "sede", "activo"]
+        allowed = ["nombre", "cargo", "proceso", "grupo_asignado", "area", "correo", "ubicacion", "sede", "activo", "tipo_usuario"]
         fields, values = [], []
         for key in allowed:
             if key in data:

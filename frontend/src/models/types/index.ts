@@ -25,6 +25,7 @@ export interface Usuario {
   sede?: string;
   activo: boolean;
   fecha_registro: string;
+  tipo_usuario: 'empleado' | 'cliente' | 'proyecto';
 }
 
 // ─── EQUIPO ───────────────────────────────────────────────────────────────────
@@ -90,7 +91,8 @@ export interface Asignacion {
   firmado?: boolean;
   firma_responsable?: string;
   fecha_firma?: string;
-  sede?: string;        // ← agregar
+  sede?: string;
+  tipo_usuario_asignado?: 'empleado' | 'cliente' | 'proyecto';   // ← agregar esto
 }
 
 // ─── ACCESORIO ────────────────────────────────────────────────────────────────
@@ -198,5 +200,25 @@ export interface EquipoMantenimiento {
   cargo?: string;
   dias_vencido?: number | null;
   urgencia: 'sin_registro' | 'vencido';}
+
+
+  export interface InventarioItem {
+  placa: string;
+  serial: string;
+  tipo: string;
+  marca: string;
+  modelo: string;
+  so: string;
+  sede?: string;
+  accesorios?: string;
+  destino?: string;
+  criticidad: string;
+  estado: string;
+  responsable: string;
+  area: string;
+  // other fields
+
+
+}
 
 

@@ -17,6 +17,7 @@ class EquipoModel:
         criticidad: str = "",
         tipo: str = "",
         es_rentado=None,
+        sede: str = "",
     ) -> list[dict]:
         pool = await get_pool()
         sql = "SELECT * FROM equipos WHERE 1=1"
@@ -38,6 +39,9 @@ class EquipoModel:
         if es_rentado is not None:
             sql += " AND es_rentado = %s"
             params.append(1 if es_rentado else 0)
+        if sede:                 # ← nuevo filtro
+            sql += " AND sede = %s"
+            params.append(sede)
 
         sql += " ORDER BY fecha_registro DESC"
         async with pool.acquire() as conn:
@@ -92,6 +96,7 @@ class EquipoModel:
             "licenciamiento_office", "marca_monitor", "placa_monitor",
             # ── Mantenimiento ──
             "ultimo_mantenimiento",
+            "sede",
         ]
         for key in optional:
             if data.get(key) is not None:

@@ -131,7 +131,23 @@ async def get_by_id(id: str):
 
 @router.post("", status_code=201)
 async def create(body: dict, current_user: dict = Depends(get_current_user)):
-    required = ["usuario_id", "equipo_id", "fecha_asignacion"]
+    required = ["equipo_id", "fecha_asignacion"]  # usuario_id ya no es obligatorio si tipo_destino es cliente/proyecto
+    # Validar tipo_destino
+    tipo_destino = body.get("tipo_destino", "usuario")
+    if tipo_destino not in ("usuario", "cliente", "proyecto"):
+        raise HTTPException(status_code=400, detail="tipo_destino inválido. Debe ser 'usuario', 'cliente' o 'proyecto'.")
+    
+        tipo_destino = body.get("tipo_destino", "usuario")
+        if tipo_destino not in ("usuario", "cliente", "proyecto"):
+            raise HTTPException(status_code=400, detail="tipo_destino inválido")
+
+        if tipo_destino == "usuario" and not body.get("usuario_id"):
+            raise HTTPException(status_code=400, detail="Para usuario se requiere usuario_id")
+        if tipo_destino == "cliente" and not body.get("cliente_nombre"):
+            raise HTTPException(status_code=400, detail="Para cliente se requiere cliente_nombre")
+        if tipo_destino == "proyecto" and not body.get("proyecto_nombre"):
+            raise HTTPException(status_code=400, detail="Para proyecto se requiere proyecto_nombre")
+
     missing = [f for f in required if not body.get(f)]
     if missing:
         raise HTTPException(
@@ -142,6 +158,9 @@ async def create(body: dict, current_user: dict = Depends(get_current_user)):
     nueva = None
     try:
         nueva = await AsignacionModel.create(body)
+
+        # ... el resto del código (accesorios, acta, hoja de vida, etc.) queda igual ...
+        # (desde aquí continúa con tu código existente: accesorios_raw, _cambiar_estado_accesorios, etc.)
 
         accesorios_raw = body.get("accesorios_entregados", [])
         accesorios_ids = []

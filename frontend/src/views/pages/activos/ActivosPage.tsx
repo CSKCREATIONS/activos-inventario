@@ -57,6 +57,7 @@ export function ActivosPage() {
   if (vistaDetalle) {
     return <ActivoDetalle equipoId={vistaDetalle} onVolver={() => setVistaDetalle(null)} />;
   }
+  const [filtroSede, setFiltroSede] = useState('');
 
   return (
     <div className="space-y-4">
@@ -91,9 +92,18 @@ export function ActivosPage() {
           <option value="">Todos los tipos</option>
           {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
+       {/* <select
+          value={filtroSede}
+          onChange={(e) => setFiltroSede(e.target.value)}
+          className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Todas las sedes</option>
+          {SEDES.map(sede => <option key={sede} value={sede}>{sede}</option>)}
+        </select> */}
         <div className="sm:ml-auto">
           <Button icon={<Plus size={16} />} onClick={handleAbrirCrear} className="w-full sm:w-auto">Nuevo activo</Button>
         </div>
+        
       </div>
 
       {/* Contador */}
@@ -115,6 +125,7 @@ export function ActivosPage() {
                 <Th>SO</Th>
                 <Th>Criticidad</Th>
                 <Th>Confidencialidad</Th>
+                {/* <Th>Sede</Th>  */}
                 <Th>Estado</Th>
                 <Th>Rentado</Th>
                 <Th>Acciones</Th>
@@ -129,6 +140,7 @@ export function ActivosPage() {
                   <Td>{e.sistema_operativo ?? '—'}</Td>
                   <Td><CriticidadBadge criticidad={e.criticidad} /></Td>
                   <Td><ConfidencialidadBadge valor={e.confidencialidad} /></Td>
+                  {/* <Td>{e.sede || '—'}</Td> */}
                   <Td><EstadoBadge estado={e.estado} /></Td>
                   <Td>{e.es_rentado ? <Badge variant="purple">Sí</Badge> : <span className="text-slate-400">—</span>}</Td>
                   <Td>
@@ -176,7 +188,7 @@ export function ActivosPage() {
           <Field label="Proveedor" value={form.proveedor ?? ''} onChange={(e) => setForm((f) => ({ ...f, proveedor: e.target.value }))} />
           <Field label="Fecha de compra" type="date" value={form.fecha_compra ?? ''} onChange={(e) => setForm((f) => ({ ...f, fecha_compra: e.target.value }))} />
           <Field label="Costo" type="number" value={form.costo?.toString() ?? ''} onChange={(e) => setForm((f) => ({ ...f, costo: Number(e.target.value) }))} />
-          <SelectField label="Sede" value={form.sede ?? ''} onChange={(e) => setForm((f) => ({ ...f, sede: e.target.value }))} options={SEDES.map((s) => ({ value: s, label: s }))} />
+          {/*<SelectField label="Sede" value={form.sede ?? ''} onChange={(e) => setForm((f) => ({ ...f, sede: e.target.value }))} options={SEDES.map((s) => ({ value: s, label: s }))} />*/}
           <div className="flex items-center gap-2 sm:col-span-2">
             <input type="checkbox" id="rentado" checked={form.es_rentado ?? false} onChange={(e) => setForm((f) => ({ ...f, es_rentado: e.target.checked }))} className="rounded" />
             <label htmlFor="rentado" className="text-sm font-medium text-slate-700">Equipo rentado</label>

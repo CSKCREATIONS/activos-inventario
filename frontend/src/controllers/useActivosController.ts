@@ -14,6 +14,7 @@ export interface FiltrosEquipos {
   criticidad: Criticidad | '';
   tipo: TipoEquipo | '';
   es_rentado: boolean | null;
+  sede: string;
 }
 
 export function useActivosController() {
@@ -28,6 +29,8 @@ export function useActivosController() {
     criticidad: '',
     tipo: '',
     es_rentado: null,
+    sede: '',
+
   });
 
   const [modalAbierto, setModalAbierto] = useState(false);

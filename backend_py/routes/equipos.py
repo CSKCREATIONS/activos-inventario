@@ -75,6 +75,7 @@ async def get_all(
     criticidad: str = Query(""),
     tipo: str = Query(""),
     es_rentado: str = Query(None),
+    sede: str = Query(""),   
 ):
     rentado_flag = None
     if es_rentado is not None:
@@ -85,6 +86,7 @@ async def get_all(
         criticidad=criticidad,
         tipo=tipo,
         es_rentado=rentado_flag,
+        sede=sede,
     )
     return serialize({"data": equipos, "total": len(equipos)})
 
