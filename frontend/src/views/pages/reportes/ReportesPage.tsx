@@ -65,7 +65,6 @@ export function ReportesPage() {
                 <Th>Marca/Modelo</Th>
                 <Th>SO</Th>
                 <Th>Sede</Th>
-                <Th>Destino</Th>
                 <Th>Criticidad</Th>
                 <Th>Estado</Th>
                 <Th>Responsable</Th>
