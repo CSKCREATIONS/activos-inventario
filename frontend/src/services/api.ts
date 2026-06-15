@@ -163,10 +163,16 @@ export const asignacionesApi = {
     request<{ data: Asignacion }>(`/asignaciones/${id}/devolucion`, {
       method: "POST",
     }),
-    firmar: (id: string, body: { firma: string }) =>
-    request<{ message: string; filename: string }>(`/asignaciones/${id}/firmar`, { method: 'POST', body: JSON.stringify(body) }),
+    devolucionMultiple: (id: string, equipos_ids: string[]) =>
+    request<{ data: Asignacion }>(`/asignaciones/${id}/devolucion`, {
+      method: 'POST',
+      body: JSON.stringify({ equipos_ids }),
+    }),
 
+  firmar: (id: string, body: { usuario_id: string; firma: string }) =>
+  request<{ message: string; filename: string }>(`/asignaciones/${id}/firmar`, { method: 'POST', body: JSON.stringify(body) }),
   /** Genera/descarga el Acta de Entrega en PDF. Devuelve Blob + filename. */
+
   downloadActa: async (
     id: string,
     force?: boolean,
@@ -192,6 +198,10 @@ export const asignacionesApi = {
       `acta_${id}.pdf`;
     return { blob, filename };
   },
+  reenviarFirma: (id: string) =>
+    request<{ message: string }>(`/asignaciones/${id}/reenviar-firma`, { method: 'POST' }),
+  obtenerTokenFirma: (id: string) =>
+    request<{ token: string }>(`/asignaciones/${id}/token-firma`),
 };
 
 // ─── Accesorios ───────────────────────────────────────────────────────────────
@@ -485,4 +495,55 @@ export const auditApi = {
     if (params?.accion) stringParams.accion = params.accion;
     return request<{ data: any[]; total: number }>(buildUrl('/audit/logs', stringParams));
   },
+};
+
+
+// Definición local del tipo Movimiento (coincide con la del backend)
+export interface Movimiento {
+  id: string;
+  suministro_id: string;
+  tipo_movimiento: 'entrada' | 'salida';
+  cantidad: number;
+  fecha: string;
+  usuario_sistema_nombre?: string;
+  usuario_solicitante_nombre?: string;
+  area_solicitante?: string;
+  motivo?: string;
+  comprobante?: string;
+  observaciones?: string;
+}
+
+
+
+export const solicitantesApi = {
+  getAll: () => request<{ data: any[] }>('/solicitantes'),
+};
+
+export const movimientosApi = {
+  getBySuministro: (id: string, params?: { limit?: number; offset?: number; fecha_desde?: string; fecha_hasta?: string }) => {
+    const stringParams: Record<string, string | undefined> = {};
+    if (params?.limit !== undefined) stringParams.limit = params.limit.toString();
+    if (params?.offset !== undefined) stringParams.offset = params.offset.toString();
+    if (params?.fecha_desde) stringParams.fecha_desde = params.fecha_desde;
+    if (params?.fecha_hasta) stringParams.fecha_hasta = params.fecha_hasta;
+    return request<{ data: Movimiento[]; total: number }>(buildUrl(`/suministros/${id}/movimientos`, stringParams));
+  },
+  create: (id: string, body: any) =>
+    request(`/suministros/${id}/movimientos`, { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: string, body: any) =>
+    request(`/movimientos/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  remove: (id: string) =>
+    request(`/movimientos/${id}`, { method: 'DELETE' }),
+  exportCsv: (suministroId: string, params?: { fecha_desde?: string; fecha_hasta?: string }) => {
+    const url = buildUrl(`/suministros/export/csv?suministro_id=${suministroId}`, params);
+    return fetch(url, { headers: getAuthHeader() }).then(res => res.blob());
+  }
+};
+
+
+export const mantenimientosApi = {
+  registrar: (equipoId: string, data: any) =>
+    request(`/equipos/${equipoId}/mantenimientos`, { method: 'POST', body: JSON.stringify(data) }),
+  listar: (equipoId: string) =>
+    request<{ data: any[] }>(`/equipos/${equipoId}/mantenimientos`),
 };

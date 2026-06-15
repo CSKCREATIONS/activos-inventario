@@ -17,6 +17,7 @@ class AsignacionUsuarioModel:
 
     @staticmethod
     async def get_by_asignacion(asignacion_id: str) -> list[dict]:
+        """Devuelve los usuarios adicionales de una asignación específica."""
         pool = await get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:

@@ -33,11 +33,37 @@ def _parse_accesorios_entregados(row: dict) -> list:
     return []
 
 
+def _parse_firmas(row: dict) -> list:
+    """Convierte el campo firmas (JSON string) a lista de diccionarios."""
+    val = row.get("firmas")
+    if val is None:
+        return []
+    if isinstance(val, (bytes, bytearray)):
+        try:
+            val = val.decode("utf-8")
+        except Exception:
+            return []
+    if isinstance(val, str):
+        if not val.strip():
+            return []
+        try:
+            parsed = json.loads(val)
+            if isinstance(parsed, list):
+                return parsed
+            return []
+        except json.JSONDecodeError:
+            return []
+    if isinstance(val, list):
+        return val
+    return []
+
+
 def _map_asignacion(row: dict) -> dict:
     """Normaliza campos JSON y agrega campo usuarios_ids (vacío inicialmente)."""
     if not row:
         return row
     row["accesorios_entregados"] = _parse_accesorios_entregados(row)
+    row["firmas"] = _parse_firmas(row)
     row["usuarios_ids"] = []   # se llenará después
     return row
 
@@ -113,9 +139,9 @@ class AsignacionModel:
         if accesorios := data.get("accesorios_entregados"):
             accesorios_json = json.dumps(accesorios, ensure_ascii=False) if isinstance(accesorios, list) else str(accesorios)
 
-        # Obtener tipo de usuario
+        # Obtener tipo de usuario (si existe la columna tipo_usuario en usuarios)
         usuario = await UsuarioModel.find_by_id(usuario_id)
-        tipo_usuario_asignado = usuario["tipo_usuario"] if usuario else "empleado"
+        tipo_usuario_asignado = usuario.get("tipo_usuario", "empleado") if usuario else "empleado"
 
         new_id = str(uuid.uuid4())
 
@@ -138,15 +164,16 @@ class AsignacionModel:
                            (id, usuario_id, equipo_id, fecha_asignacion, estado, observaciones,
                             accesorios_entregados, acta_pdf, hoja_vida_pdf,
                             firma_responsable, fecha_firma, firmado, sede,
-                            tipo_usuario_asignado)
-                           VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                            tipo_usuario_asignado, firmas)
+                           VALUES (%s, %s, %s, %s, 'Activa', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         [
                             new_id, usuario_id, equipo_id, fecha_asignacion,
                             observaciones, accesorios_json,
                             data.get("acta_pdf"), data.get("hoja_vida_pdf"),
                             None, None, 0,
                             data.get("sede"),
-                            tipo_usuario_asignado
+                            tipo_usuario_asignado,
+                            None   # firmas inicialmente NULL
                         ]
                     )
                     # Cambiar estado del equipo
@@ -168,7 +195,9 @@ class AsignacionModel:
         allowed = {
             "observaciones", "accesorios_entregados", "estado", "acta_pdf",
             "hoja_vida_pdf", "fecha_devolucion", "firma_responsable", "fecha_firma", "firmado",
-            "sede"
+            "sede", "tipo_usuario_asignado", "firmas",
+            "equipo_id",   # ← ahora sí se puede actualizar el equipo principal
+            "usuario_id"   # ← opcional, si se quiere cambiar el responsable principal
         }
         updates = []
         values = []
@@ -177,16 +206,17 @@ class AsignacionModel:
                 updates.append(f"{key} = %s")
                 if key == "accesorios_entregados" and isinstance(value, list):
                     values.append(json.dumps(value, ensure_ascii=False))
+                elif key == "firmas" and isinstance(value, list):
+                    values.append(json.dumps(value, ensure_ascii=False))
                 else:
                     values.append(value)
 
         # Si cambia el usuario_id, recalcular tipo_usuario_asignado
         if "usuario_id" in data:
             usuario = await UsuarioModel.find_by_id(data["usuario_id"])
-            tipo = usuario["tipo_usuario"] if usuario else "empleado"
+            tipo = usuario.get("tipo_usuario", "empleado") if usuario else "empleado"
             updates.append("tipo_usuario_asignado = %s")
             values.append(tipo)
-            # También actualizar el usuario_id en la tabla
             updates.append("usuario_id = %s")
             values.append(data["usuario_id"])
 
@@ -254,3 +284,21 @@ class AsignacionModel:
                     "SELECT * FROM equipos WHERE estado = 'Disponible' ORDER BY placa ASC"
                 )
                 return await cur.fetchall()
+
+    @staticmethod
+    async def enrich_with_extra_users(asignacion: dict) -> dict:
+        """Agrega a la asignación la lista 'usuarios_adicionales' con los nombres de los usuarios secundarios."""
+        usuario_principal = await UsuarioModel.find_by_id(asignacion["usuario_id"])
+        if not usuario_principal:
+            asignacion["usuario_principal_nombre"] = asignacion.get("usuario_nombre", "")
+        else:
+            asignacion["usuario_principal_nombre"] = usuario_principal.get("nombre", "")
+
+        usuarios_ids = asignacion.get("usuarios_ids", [])
+        usuarios_extra = []
+        for uid in usuarios_ids:
+            u = await UsuarioModel.find_by_id(uid)
+            if u:
+                usuarios_extra.append({"nombre": u.get("nombre", "")})
+        asignacion["usuarios_adicionales"] = usuarios_extra
+        return asignacion

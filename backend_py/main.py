@@ -11,10 +11,13 @@ from config.db import test_connection, close_pool
 from routes import (
     usuarios, equipos, asignaciones, accesorios,
     documentos, dashboard, susuarios, suministros,
-    auth, licencias, importar,
+    auth, licencias, importar, movimientos_suministros, solicitantes, mantenimientos
 )
 from dependencies  import get_current_user
 from routes import audit
+
+from utils.email_service import send_email, render_template
+
 
 
 load_dotenv()
@@ -63,11 +66,12 @@ app.include_router(documentos.router,   prefix="/api/documentos",   tags=["Docum
 app.include_router(dashboard.router,    prefix="/api/dashboard",    tags=["Dashboard"],       dependencies=protected)
 app.include_router(susuarios.router,    prefix="/api/Susuarios",    tags=["UsuariosSistema"], dependencies=protected)
 app.include_router(suministros.router,  prefix="/api/suministros",  tags=["Suministros"],     dependencies=protected)
+app.include_router(movimientos_suministros.router, prefix="/api/suministros", tags=["Kardex"], dependencies=protected)
+app.include_router(solicitantes.router, prefix="/api/solicitantes", tags=["Solicitantes"], dependencies=protected)
 app.include_router(licencias.router,    prefix="/api/licencias",    tags=["Licencias"],       dependencies=protected)
 app.include_router(importar.router,     prefix="/api/importar",     tags=["Importar CSV"],    dependencies=protected)
 app.include_router(audit.router, prefix="/api/audit", tags=["Auditoría"], dependencies=protected)
-
-
+app.include_router(mantenimientos.router, prefix="/api", tags=["Mantenimientos"], dependencies=protected)
 # Endpoints públicos: login/token + health
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 
@@ -94,3 +98,18 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+
+    from utils.email_service import send_email, render_template
+
+@app.get("/api/test-email")
+async def test_email():
+    html = render_template("test", {"mensaje": "Hola desde FastAPI"})
+    ok = await send_email(
+        to="juliandavicast@gmail.com",   # tu correo (destino)
+        subject="Test Resend",
+        html=html
+    )
+    if ok:
+        return {"message": "Correo enviado correctamente"}
+    else:
+        return {"message": "Error al enviar correo, revisa la API key"}, 500

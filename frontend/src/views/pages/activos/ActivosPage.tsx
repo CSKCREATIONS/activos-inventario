@@ -54,10 +54,12 @@ export function ActivosPage() {
     }
   };
 
+  const [filtroSede, setFiltroSede] = useState('');
+
   if (vistaDetalle) {
     return <ActivoDetalle equipoId={vistaDetalle} onVolver={() => setVistaDetalle(null)} />;
   }
-  const [filtroSede, setFiltroSede] = useState('');
+  
 
   return (
     <div className="space-y-4">

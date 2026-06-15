@@ -6,10 +6,12 @@ import type { Asignacion, AccesorioAsignado, Equipo, TipoEquipo } from '../../..
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
-import { Plus, RotateCcw, Link2, FileDown, Eye, X, Edit2, PenTool } from 'lucide-react';
-import { asignacionesApi } from '../../../services/api';
+import { Plus, RotateCcw, Link2, FileDown, Eye, X, Edit2, PenTool,Mail, Key } from 'lucide-react';
+import { asignacionesApi, equiposApi } from '../../../services/api';
 import { SignaturePad } from '../../components/ui/SignaturePad';
 import { SEDES } from '../../../constants/sedes';
+
+
 
 const ASIGNACION_VARIANT = {
   Activa: 'green',
@@ -35,15 +37,19 @@ const formatearAccesorio = (valor: string | AccesorioTexto | null | undefined): 
   const referencia = valor.referencia?.trim();
   if (referencia) return referencia;
 
-  const partes = [valor.tipo_equipo, valor.marca, valor.modelo]
+  // Solo usar marca y modelo, NO el tipo_equipo
+  const partes = [valor.marca, valor.modelo]
     .map((parte) => parte?.trim())
     .filter((parte): parte is string => Boolean(parte));
 
   if (partes.length > 0) return partes.join(' ');
+
   const nombre = valor.nombre?.trim();
   if (nombre) return nombre;
+
   const nombreEquipo = valor.nombre_equipo?.trim();
   if (nombreEquipo) return nombreEquipo;
+
   return 'Accesorio';
 };
 
@@ -109,9 +115,15 @@ export function AsignacionesPage() {
   const equipoSeleccionado = ctrl.equiposDisponibles.find((e) => e.id === form.equipo_id);
   const puedeGenerarHojaVida = equipoSeleccionado ? TIPOS_CON_HV.has(equipoSeleccionado.tipo_equipo) : false;
 
-  // Firma
+  // Usuarios adicionales para nueva asignación
+  const [usuariosAdicionales, setUsuariosAdicionales] = useState<string[]>([]);
+
+  // Firma múltiple
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [signatureAsignacionId, setSignatureAsignacionId] = useState<string | null>(null);
+  const [selectedUsuarioFirma, setSelectedUsuarioFirma] = useState<{ id: string; nombre: string } | null>(null);
+  const [showUserSelector, setShowUserSelector] = useState(false);
+  const [currentAsignacionParaFirma, setCurrentAsignacionParaFirma] = useState<Asignacion | null>(null);
 
   // Estado del modal de edición
   const [modalEditAbierto, setModalEditAbierto] = useState(false);
@@ -120,19 +132,46 @@ export function AsignacionesPage() {
     accesorios_entregados: [] as AccesorioAsignado[],
     observaciones: '',
     sede: '',
+    equipo_id: '',
   });
+  const [originalEquipoId, setOriginalEquipoId] = useState<string | null>(null);
 
-  // Filtro por sede (estado local)
+  // Modal de devolución de accesorios (antes "devolución múltiple")
+  const [showDevolucionModal, setShowDevolucionModal] = useState(false);
+  const [devolucionAsignacion, setDevolucionAsignacion] = useState<Asignacion | null>(null);
+  const [accesoriosSeleccionadosDevolucion, setAccesoriosSeleccionadosDevolucion] = useState<Set<string>>(new Set());
+
+  // Filtros
   const [filtroSede, setFiltroSede] = useState('');
+  const [filtroTipoResponsable, setFiltroTipoResponsable] = useState('');
 
-  // Aplicar filtro de sede a las asignaciones
-  const asignacionesFiltradasPorSede = ctrl.asignaciones.filter((a) => {
-    return !filtroSede || a.sede === filtroSede;
-  });
+  // Aplicar filtros
+  const asignacionesFiltradas = useMemo(() => {
+    let filtradas = ctrl.asignaciones;
+    if (filtroSede) {
+      filtradas = filtradas.filter(a => a.sede === filtroSede);
+    }
+    if (filtroTipoResponsable) {
+      filtradas = filtradas.filter(a => a.tipo_usuario_asignado === filtroTipoResponsable);
+    }
+    return filtradas;
+  }, [ctrl.asignaciones, filtroSede, filtroTipoResponsable]);
 
   // Handlers
   const toggleAccesorio = (accesorio: AccesorioAsignado) => {
     setForm((f) => {
+      const existe = f.accesorios_entregados.some((a) => a.id === accesorio.id);
+      return {
+        ...f,
+        accesorios_entregados: existe
+          ? f.accesorios_entregados.filter((a) => a.id !== accesorio.id)
+          : [...f.accesorios_entregados, accesorio],
+      };
+    });
+  };
+
+  const toggleAccesorioEditar = (accesorio: AccesorioAsignado) => {
+    setEditForm((f) => {
       const existe = f.accesorios_entregados.some((a) => a.id === accesorio.id);
       return {
         ...f,
@@ -156,6 +195,7 @@ export function AsignacionesPage() {
       accesorios_entregados: form.accesorios_entregados,
       generar_hoja_vida: form.generar_hoja_vida,
       sede: form.sede,
+      usuarios_ids: usuariosAdicionales,
     });
     if (resultado.error) {
       setError(resultado.error);
@@ -165,6 +205,7 @@ export function AsignacionesPage() {
   };
 
   const abrirModalEditar = (asignacion: Asignacion) => {
+    setOriginalEquipoId(asignacion.equipo_id);
     setEditForm({
       usuarios_ids: asignacion.usuarios_ids || [asignacion.usuario_id],
       accesorios_entregados: Array.isArray(asignacion.accesorios_entregados)
@@ -172,79 +213,161 @@ export function AsignacionesPage() {
         : [],
       observaciones: asignacion.observaciones || '',
       sede: asignacion.sede || '',
+      equipo_id: asignacion.equipo_id || '',
     });
     ctrl.setSelectedAsignacion(asignacion);
     setModalEditAbierto(true);
   };
-  const [filtroTipoResponsable, setFiltroTipoResponsable] = useState('');
-
-  const asignacionesFiltradas = useMemo(() => {
-  let filtradas = ctrl.asignaciones;
-  if (filtroSede) {
-    filtradas = filtradas.filter(a => a.sede === filtroSede);
-  }
-  if (filtroTipoResponsable) {
-    filtradas = filtradas.filter(a => a.tipo_usuario_asignado === filtroTipoResponsable);
-  }
-  return filtradas;
-}, [ctrl.asignaciones, filtroSede, filtroTipoResponsable]);
-
-  const toggleUsuarioEditar = (usuarioId: string) => {
-    setEditForm((f) => {
-      const existe = f.usuarios_ids.includes(usuarioId);
-      return {
-        ...f,
-        usuarios_ids: existe
-          ? f.usuarios_ids.filter((id) => id !== usuarioId)
-          : [...f.usuarios_ids, usuarioId],
-      };
-    });
-  };
-
-  const toggleAccesorioEditar = (accesorio: AccesorioAsignado) => {
-    setEditForm((f) => {
-      const existe = f.accesorios_entregados.some((a) => a.id === accesorio.id);
-      return {
-        ...f,
-        accesorios_entregados: existe
-          ? f.accesorios_entregados.filter((a) => a.id !== accesorio.id)
-          : [...f.accesorios_entregados, accesorio],
-      };
-    });
-  };
 
   const handleGuardarEdicion = async () => {
     if (!ctrl.selectedAsignacion) return;
-    const resultado = await ctrl.editarAsignacion(ctrl.selectedAsignacion.id, {
-      usuarios_ids: editForm.usuarios_ids,
-      accesorios_entregados: editForm.accesorios_entregados,
-      observaciones: editForm.observaciones,
-      sede: editForm.sede,   // ← Corregido: usa editForm.sede
-    });
-    if (!resultado?.error) {
-      setModalEditAbierto(false);
+    const asignacionId = ctrl.selectedAsignacion.id;
+
+    if (editForm.equipo_id && editForm.equipo_id !== originalEquipoId) {
+      const confirmar = window.confirm('Se ha cambiado el equipo principal. ¿Deseas devolver el equipo anterior y asignar el nuevo?');
+      if (!confirmar) return;
+      try {
+        // Liberar el equipo anterior
+        await equiposApi.update(originalEquipoId!, { estado: 'Disponible' });
+        // Asignar el nuevo equipo
+        await equiposApi.update(editForm.equipo_id, { estado: 'Asignado' });
+        // Actualizar la asignación
+        await ctrl.editarAsignacion(asignacionId, {
+          equipo_id: editForm.equipo_id,
+          usuarios_ids: editForm.usuarios_ids,
+          accesorios_entregados: editForm.accesorios_entregados,
+          observaciones: editForm.observaciones,
+          sede: editForm.sede,
+        });
+        await ctrl.refetch();
+      } catch (err) {
+        console.error(err);
+        alert('Error al cambiar el equipo. Intente de nuevo.');
+        return;
+      }
+    } else {
+      const resultado = await ctrl.editarAsignacion(asignacionId, {
+        usuarios_ids: editForm.usuarios_ids,
+        accesorios_entregados: editForm.accesorios_entregados,
+        observaciones: editForm.observaciones,
+        sede: editForm.sede,
+        equipo_id: editForm.equipo_id,
+      });
+      if (resultado?.error) {
+        alert(resultado.error);
+        return;
+      }
+    }
+    setModalEditAbierto(false);
+    // Si la previsualización estaba abierta, cerrarla y recargar
+    if (ctrl.previewUrl) {
+      ctrl.cerrarPreview();
+      setTimeout(() => ctrl.obtenerUrlActa(asignacionId), 500);
     }
   };
 
-  const handleFirmar = async (id: string, firmaDataUrl: string) => {
+  // Abrir modal para devolver solo accesorios (sin el equipo principal)
+  const abrirDevolucionAccesorios = (asignacion: Asignacion) => {
+    setDevolucionAsignacion(asignacion);
+    // Seleccionar todos los accesorios por defecto (opcional)
+    const allAccesoriosIds = new Set<string>();
+    (asignacion.accesorios_entregados || []).forEach((acc: any) => {
+      if (acc.id) allAccesoriosIds.add(acc.id);
+    });
+    setAccesoriosSeleccionadosDevolucion(allAccesoriosIds);
+    setShowDevolucionModal(true);
+  };
+
+  const toggleAccesorioDevolucion = (id: string) => {
+    setAccesoriosSeleccionadosDevolucion(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  };
+
+  const handleDevolverAccesorios = async () => {
+    if (!devolucionAsignacion) return;
+    const ids = Array.from(accesoriosSeleccionadosDevolucion);
+    if (ids.length === 0) {
+      alert('Selecciona al menos un accesorio para devolver.');
+      return;
+    }
     try {
-      await asignacionesApi.firmar(id, { firma: firmaDataUrl });
+      await asignacionesApi.devolucionMultiple(devolucionAsignacion.id, ids);
+      await ctrl.refetch();
+      setShowDevolucionModal(false);
+      setDevolucionAsignacion(null);
+      setAccesoriosSeleccionadosDevolucion(new Set());
+      if (ctrl.previewUrl) {
+        ctrl.cerrarPreview();
+        setTimeout(() => ctrl.obtenerUrlActa(devolucionAsignacion.id), 500);
+      }
+      alert(`${ids.length} accesorio(s) devuelto(s).`);
+    } catch (err) {
+      console.error(err);
+      alert('Error al devolver los accesorios.');
+    }
+  };
+
+  // Funciones para firmas
+  const getUsuariosAsignados = (asignacion: Asignacion) => {
+    const principal = ctrl.usuarios.find(u => u.id === asignacion.usuario_id);
+    const adicionales = (asignacion.usuarios_ids || [])
+      .map(id => ctrl.usuarios.find(u => u.id === id))
+      .filter(Boolean) as any[];
+    return [
+      { id: asignacion.usuario_id, nombre: principal?.nombre || 'Usuario principal' },
+      ...adicionales.map(u => ({ id: u.id, nombre: u.nombre })),
+    ];
+  };
+
+  const iniciarFirma = (asignacion: Asignacion) => {
+    setCurrentAsignacionParaFirma(asignacion);
+    setSignatureAsignacionId(asignacion.id);
+    setShowUserSelector(true);
+  };
+
+  const seleccionarUsuarioParaFirma = (usuario: { id: string; nombre: string }) => {
+    setSelectedUsuarioFirma(usuario);
+    setShowUserSelector(false);
+    setShowSignatureModal(true);
+  };
+    const handleReenviarFirma = async (asignacionId: string) => {
+    if (!confirm('¿Reenviar el correo de firma a los usuarios responsables?')) return;
+    try {
+      await asignacionesApi.reenviarFirma(asignacionId);
+      alert('Correo de firma reenviado correctamente');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al reenviar el correo');
+    }
+  };
+
+  const handleMostrarToken = async (asignacionId: string) => {
+    try {
+      const res = await asignacionesApi.obtenerTokenFirma(asignacionId);
+      prompt('Token para firmar (copia para pruebas en Postman):', res.token);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al obtener el token');
+    }
+  };
+
+  const handleFirmar = async (firmaDataUrl: string) => {
+    if (!signatureAsignacionId || !selectedUsuarioFirma) return;
+    try {
+      await asignacionesApi.firmar(signatureAsignacionId, { usuario_id: selectedUsuarioFirma.id, firma: firmaDataUrl });
       await ctrl.refetch();
       setShowSignatureModal(false);
       setSignatureAsignacionId(null);
+      setSelectedUsuarioFirma(null);
       if (ctrl.previewUrl) {
-        await ctrl.obtenerUrlActa(id);
+        await ctrl.obtenerUrlActa(signatureAsignacionId);
       }
     } catch (err) {
       console.error(err);
       alert('Error al firmar el acta');
     }
-  };
-
-  const previsualizarActa = async (id: string) => {
-    const { blob } = await asignacionesApi.downloadActa(id, true);
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
   };
 
   return (
@@ -278,7 +401,6 @@ export function AsignacionesPage() {
           <option value="Devuelta">Devuelta</option>
           <option value="Extraviada">Extraviada</option>
         </select>
-        {/* Filtro por sede */}
         <select
           value={filtroSede}
           onChange={(e) => setFiltroSede(e.target.value)}
@@ -310,6 +432,7 @@ export function AsignacionesPage() {
                 generar_hoja_vida: false,
                 sede: '',
               });
+              setUsuariosAdicionales([]);
               setError('');
               ctrl.setModalAbierto(true);
             }}
@@ -329,7 +452,8 @@ export function AsignacionesPage() {
             <Table>
               <thead>
                 <tr>
-                  <Th>Usuario</Th>
+                  <Th>Usuario(s)</Th>
+                  <Th>Firmas</Th>
                   <Th>Tipo responsable</Th>
                   <Th>Área</Th>
                   <Th>Sede</Th>
@@ -338,16 +462,31 @@ export function AsignacionesPage() {
                   <Th>Fecha asignación</Th>
                   <Th>Fecha devolución</Th>
                   <Th>Estado</Th>
-                  <Th>Documentos</Th>
                   <Th>Acciones</Th>
                 </tr>
               </thead>
               <tbody>
-                {asignacionesFiltradasPorSede.map((a) => (
+                {asignacionesFiltradas.map((a) => (
                   <tr key={a.id} className="hover:bg-slate-50 transition-colors">
                     <Td className="font-medium">
-                      <div>{a.usuario?.nombre ?? '—'}</div>
-                      <div className="text-xs text-slate-500">{a.usuario?.cargo ?? ''}</div>
+                      <div>{a.todos_usuarios || '—'}</div>
+                      {a.cantidad_adicionales > 0 && (
+                        <div className="text-xs text-slate-500">
+                          {a.cantidad_adicionales} usuario(s) adicional(es)
+                        </div>
+                      )}
+                    </Td>
+                    <Td>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs text-slate-500">
+                          Firmas: {(a.firmas?.length || 0)} / {(a.usuarios_ids?.length || 0) + 1}
+                        </span>
+                        {a.firmas?.map((f: any) => (
+                          <Badge key={f.user_id} variant="green" size="sm">
+                            ✓ {f.nombre}
+                          </Badge>
+                        ))}
+                      </div>
                     </Td>
                     <Td>
                       <Badge variant={
@@ -390,15 +529,33 @@ export function AsignacionesPage() {
                         >
                           Acta
                         </Button>
-                        {a.equipo_id && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            icon={<FileDown size={12} />}
-                            onClick={() => ctrl.descargarHojaVida(a.equipo_id, a.equipo?.placa)}
-                          >
-                            H.Vida
-                          </Button>
+                        <Button
+                              variant="ghost"
+                              size="sm"
+                              icon={<Mail size={12} />}
+                              onClick={() => handleReenviarFirma(a.id)}
+                              title="Reenviar correo de firma"
+                            />
+                            {/* ✅ Botón obtener token */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              icon={<Key size={12} />}
+                              onClick={() => handleMostrarToken(a.id)}
+                              title="Obtener token para pruebas"
+                            />
+                        {a.estado === 'Activa' && (
+                          <>
+                            
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              icon={<RotateCcw size={12} />}
+                              onClick={() => abrirDevolucionAccesorios(a)}
+                            >
+                              Devolver accesorios
+                            </Button>
+                          </>
                         )}
                       </div>
                     </Td>
@@ -416,19 +573,8 @@ export function AsignacionesPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            icon={<RotateCcw size={12} />}
-                            onClick={() => ctrl.registrarDevolucion(a.id)}
-                          >
-                            Devolver
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
                             icon={<PenTool size={12} />}
-                            onClick={() => {
-                              setSignatureAsignacionId(a.id);
-                              setShowSignatureModal(true);
-                            }}
+                            onClick={() => iniciarFirma(a)}
                           >
                             Firmar
                           </Button>
@@ -440,7 +586,7 @@ export function AsignacionesPage() {
               </tbody>
             </Table>
             <p className="text-sm text-slate-500 px-4 py-3 border-t">
-              Mostrando <strong>{asignacionesFiltradasPorSede.length}</strong> de <strong>{ctrl.asignaciones.length}</strong> asignaciones
+              Mostrando <strong>{asignacionesFiltradas.length}</strong> de <strong>{ctrl.asignaciones.length}</strong> asignaciones
             </p>
           </>
         )}
@@ -461,7 +607,7 @@ export function AsignacionesPage() {
         </div>
       )}
 
-      {/* Modal nueva asignación */}
+      {/* Modal nueva asignación (sin cambios) */}
       <Modal abierto={ctrl.modalAbierto} onCerrar={() => ctrl.setModalAbierto(false)} titulo="Nueva asignación" size="md">
         <div className="space-y-4">
           {error && <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
@@ -500,6 +646,35 @@ export function AsignacionesPage() {
             value={form.observaciones}
             onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))}
           />
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-slate-700">Usuarios adicionales (opcional)</p>
+            <div className="space-y-2 max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-3">
+              {ctrl.usuarios.map((usuario) => (
+                <label key={usuario.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-2 rounded">
+                  <input
+                    type="checkbox"
+                    checked={usuariosAdicionales.includes(usuario.id)}
+                    onChange={() => {
+                      if (usuariosAdicionales.includes(usuario.id)) {
+                        setUsuariosAdicionales(prev => prev.filter(id => id !== usuario.id));
+                      } else {
+                        if (usuario.id === form.usuario_id) {
+                          alert('El usuario principal no puede ser seleccionado como adicional.');
+                          return;
+                        }
+                        setUsuariosAdicionales(prev => [...prev, usuario.id]);
+                      }
+                    }}
+                    className="h-4 w-4"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-slate-700">{usuario.nombre}</div>
+                    <div className="text-xs text-slate-500">{usuario.cargo} – {usuario.area}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
           <div className="space-y-4">
             <p className="text-sm font-medium text-slate-700">Accesorios/Equipos adicionales</p>
             {Object.keys(ctrl.accesoriosDisponiblesAgrupados).length === 0 ? (
@@ -578,7 +753,14 @@ export function AsignacionesPage() {
                   <input
                     type="checkbox"
                     checked={editForm.usuarios_ids.includes(usuario.id)}
-                    onChange={() => toggleUsuarioEditar(usuario.id)}
+                    onChange={() => {
+                      const existe = editForm.usuarios_ids.includes(usuario.id);
+                      if (existe) {
+                        setEditForm(f => ({ ...f, usuarios_ids: f.usuarios_ids.filter(id => id !== usuario.id) }));
+                      } else {
+                        setEditForm(f => ({ ...f, usuarios_ids: [...f.usuarios_ids, usuario.id] }));
+                      }
+                    }}
                     className="h-4 w-4"
                   />
                   <div className="flex-1">
@@ -589,6 +771,12 @@ export function AsignacionesPage() {
               ))}
             </div>
           </div>
+          <SelectField
+            label="Equipo principal"
+            value={editForm.equipo_id}
+            onChange={(e) => setEditForm(f => ({ ...f, equipo_id: e.target.value }))}
+            options={ctrl.equiposDisponibles.map(e => ({ value: e.id, label: `${e.placa} - ${e.tipo_equipo} ${e.marca || ''}` }))}
+          />
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate-700">Accesorios/Equipos adicionales</p>
             {Object.keys(ctrl.accesoriosDisponiblesAgrupados).length === 0 ? (
@@ -607,9 +795,7 @@ export function AsignacionesPage() {
                           <input
                             type="checkbox"
                             checked={editForm.accesorios_entregados.some((a) => a.id === acc.id)}
-                            onChange={() => toggleAccesorioEditar({
-                              ...crearAccesorioAsignado(acc),
-                            })}
+                            onChange={() => toggleAccesorioEditar(crearAccesorioAsignado(acc))}
                             className="h-4 w-4 mt-0.5 flex-shrink-0"
                           />
                           <div className="flex-1 min-w-0">
@@ -664,18 +850,151 @@ export function AsignacionesPage() {
         </div>
       </Modal>
 
-      {/* Modal de firma */}
+      {/* Modal de devolución de accesorios (sin equipo principal) */}
       <Modal
-        abierto={showSignatureModal}
-        onCerrar={() => setShowSignatureModal(false)}
-        titulo="Firmar acta de entrega"
+        abierto={showDevolucionModal}
+        onCerrar={() => {
+          setShowDevolucionModal(false);
+          setDevolucionAsignacion(null);
+          setAccesoriosSeleccionadosDevolucion(new Set());
+        }}
+        titulo="Devolver accesorios"
         size="md"
       >
-        <SignaturePad
-          onSave={(dataUrl) => signatureAsignacionId && handleFirmar(signatureAsignacionId, dataUrl)}
-          onCancel={() => setShowSignatureModal(false)}
-        />
+        {devolucionAsignacion && (
+          <div className="space-y-4">
+            {(() => {
+              const accesorios = devolucionAsignacion.accesorios_entregados || [];
+              if (accesorios.length === 0) {
+                return <p className="text-slate-500 italic">No hay accesorios asignados para devolver.</p>;
+              }
+
+              // Agrupar por tipo_equipo
+              const grupos = new Map<string, any[]>();
+              accesorios.forEach((acc: any) => {
+                const tipo = acc.tipo_equipo || 'Otros';
+                if (!grupos.has(tipo)) grupos.set(tipo, []);
+                grupos.get(tipo)!.push(acc);
+              });
+
+              const orden = ['Monitor', 'Impresora', 'Teclado', 'Mouse', 'Otros'];
+              const gruposOrdenados = Array.from(grupos.entries()).sort((a, b) => {
+                const idxA = orden.indexOf(a[0]);
+                const idxB = orden.indexOf(b[0]);
+                return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+              });
+
+              return gruposOrdenados.map(([tipo, items]) => {
+                const todosSeleccionados = items.every(item => accesoriosSeleccionadosDevolucion.has(item.id));
+                return (
+                  <div key={tipo} className="border border-slate-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-semibold text-slate-700">{tipo}</h4>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const nuevosIds = new Set(accesoriosSeleccionadosDevolucion);
+                          if (todosSeleccionados) {
+                            items.forEach(item => nuevosIds.delete(item.id));
+                          } else {
+                            items.forEach(item => nuevosIds.add(item.id));
+                          }
+                          setAccesoriosSeleccionadosDevolucion(nuevosIds);
+                        }}
+                      >
+                        {todosSeleccionados ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {items.map((item) => (
+                        <label key={item.id} className="flex items-center gap-2 p-2 border rounded-lg cursor-pointer hover:bg-slate-50">
+                          <input
+                            type="checkbox"
+                            checked={accesoriosSeleccionadosDevolucion.has(item.id)}
+                            onChange={() => toggleAccesorioDevolucion(item.id)}
+                            className="h-4 w-4"
+                          />
+                          <div>
+                            <div className="font-medium text-slate-800">{item.nombre || item.placa}</div>
+                            {item.placa && <div className="text-xs text-slate-500">Placa: {item.placa}</div>}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button variant="outline" onClick={() => setShowDevolucionModal(false)}>Cancelar</Button>
+              <Button
+                variant="primary"
+                onClick={handleDevolverAccesorios}
+                disabled={accesoriosSeleccionadosDevolucion.size === 0}
+              >
+                Devolver seleccionados ({accesoriosSeleccionadosDevolucion.size})
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal selector de usuario para firmar */}
+      <Modal
+        abierto={showUserSelector}
+        onCerrar={() => setShowUserSelector(false)}
+        titulo="¿Quién firma el acta?"
+        size="sm"
+      >
+        <div className="space-y-3">
+          {currentAsignacionParaFirma && getUsuariosAsignados(currentAsignacionParaFirma).map((usuario) => {
+            const yaFirmo = currentAsignacionParaFirma.firmas?.some((f: any) => f.user_id === usuario.id);
+            return (
+              <button
+                key={usuario.id}
+                onClick={() => !yaFirmo && seleccionarUsuarioParaFirma(usuario)}
+                disabled={yaFirmo}
+                className={`w-full text-left p-3 rounded-lg border transition-all ${yaFirmo
+                  ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                  : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50'
+                }`}
+              >
+                <div className="font-medium">{usuario.nombre}</div>
+                {yaFirmo && <div className="text-xs text-emerald-600">✓ Ya firmó</div>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
+          <Button variant="outline" onClick={() => setShowUserSelector(false)}>Cancelar</Button>
+        </div>
+      </Modal>
+
+      {/* Modal de firma (SignaturePad) */}
+      <Modal
+        abierto={showSignatureModal}
+        onCerrar={() => {
+          setShowSignatureModal(false);
+          setSelectedUsuarioFirma(null);
+          setSignatureAsignacionId(null);
+        }}
+        titulo={`Firmar acta - ${selectedUsuarioFirma?.nombre || ''}`}
+        size="md"
+      >
+        {selectedUsuarioFirma && (
+          <SignaturePad
+            onSave={(dataUrl) => {
+              if (signatureAsignacionId) handleFirmar(dataUrl);
+            }}
+            onCancel={() => {
+              setShowSignatureModal(false);
+              setSelectedUsuarioFirma(null);
+              setSignatureAsignacionId(null);
+            }}
+          />
+        )}
       </Modal>
     </div>
   );
-} 
+}

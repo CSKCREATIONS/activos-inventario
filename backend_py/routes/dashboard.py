@@ -19,9 +19,8 @@ def _add_months(d: date, months: int) -> date:
 @router.get("/mantenimientos-pendientes")
 async def get_mantenimientos_pendientes():
     """
-    Devuelve equipos activos cuyo ultimo_mantenimiento es NULL
-    o tiene más de 6 meses de antigüedad.
-    Ordena por urgencia: sin mantenimiento primero, luego por fecha más antigua.
+    Devuelve equipos activos cuyo último mantenimiento está vencido (más de 6 meses)
+    o que nunca tuvieron mantenimiento pero fueron registrados hace más de 6 meses.
     """
     pool = await get_pool()
     try:
@@ -31,7 +30,7 @@ async def get_mantenimientos_pendientes():
                 await cur.execute("""
                     SELECT
                         e.id, e.placa, e.marca, e.modelo, e.tipo_equipo,
-                        e.estado, e.ultimo_mantenimiento,
+                        e.estado, e.ultimo_mantenimiento, e.fecha_registro,
                         u.nombre  AS usuario_nombre,
                         u.area    AS area,
                         u.cargo   AS cargo
@@ -41,11 +40,14 @@ async def get_mantenimientos_pendientes():
                     LEFT JOIN usuarios u ON u.id = a.usuario_id
                     WHERE e.estado != 'Baja'
                       AND (
-                            e.ultimo_mantenimiento IS NULL
-                         OR e.ultimo_mantenimiento <= %s
+                          (e.ultimo_mantenimiento IS NOT NULL AND e.ultimo_mantenimiento <= %s)
+                          OR
+                          (e.ultimo_mantenimiento IS NULL AND e.fecha_registro <= %s)
                       )
-                    ORDER BY e.ultimo_mantenimiento ASC
-                """, [limite])
+                    ORDER BY
+                        CASE WHEN e.ultimo_mantenimiento IS NULL THEN 0 ELSE 1 END,
+                        e.ultimo_mantenimiento ASC
+                """, [limite, limite])
                 rows = await cur.fetchall()
 
         total = len(rows)
@@ -79,7 +81,6 @@ async def get_mantenimientos_pendientes():
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("")
 async def get_stats():

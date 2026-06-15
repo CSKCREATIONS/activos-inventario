@@ -6,13 +6,10 @@ import { useUsuariosStore } from "../models/stores/useUsuariosStore";
 import { asignacionesApi, equiposApi, usuariosApi } from "../services/api";
 import type { Asignacion, AccesorioAsignado } from "../models/types/index";
 
-
-
 export function useAsignacionesController() {
   const { asignaciones, setAsignaciones, updateAsignacion } = useAsignacionesStore();
   const { equipos, setEquipos } = useEquiposStore();
   const { usuarios, setUsuarios } = useUsuariosStore();
-  
 
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstado, setFiltroEstado] = useState<string>("");
@@ -48,16 +45,30 @@ export function useAsignacionesController() {
     fetchData();
   }, [fetchData]);
 
-  // ── Filtrado y enriquecimiento local ──────────────────────────────────────
+  // ── Filtrado y enriquecimiento local (incluye todos los usuarios) ─────────
   const asignacionesEnriquecidas = useMemo(() => {
-    return asignaciones
-      .map((a) => ({
-        ...a,
-        usuario: usuarios.find((u) => u.id === a.usuario_id),
-        equipo: equipos.find((e) => e.id === a.equipo_id),
-      }))
-      .sort((a, b) => b.fecha_asignacion.localeCompare(a.fecha_asignacion));
-  }, [asignaciones, usuarios, equipos]);
+  return asignaciones.map((a) => {
+    const usuarioPrincipal = usuarios.find((u) => u.id === a.usuario_id);
+    const idsAdicionales = a.usuarios_ids || [];
+    const usuariosAdicionales = idsAdicionales
+      .map((id) => usuarios.find((u) => u.id === id)?.nombre)
+      .filter(Boolean) as string[];
+    const todosLosUsuarios = [
+      usuarioPrincipal?.nombre,
+      ...usuariosAdicionales
+    ].filter(Boolean).join(', ');
+    
+    return {
+      ...a,
+      usuario: usuarioPrincipal,
+      equipo: equipos.find((e) => e.id === a.equipo_id),
+      usuarios_adicionales_ids: idsAdicionales,
+      usuarios_adicionales_nombres: usuariosAdicionales,
+      todos_usuarios: todosLosUsuarios || '—',
+      cantidad_adicionales: usuariosAdicionales.length,
+    };
+  });
+}, [asignaciones, usuarios, equipos]);
 
   const asignacionesFiltradas = useMemo(() => {
     return asignacionesEnriquecidas.filter((a) => {
@@ -102,7 +113,9 @@ export function useAsignacionesController() {
     fecha_asignacion: string;
     accesorios_entregados?: (string | AccesorioAsignado)[];
     generar_hoja_vida?: boolean;
-    sede?: string; 
+    sede?: string;
+    usuarios_ids?: string[];
+    
   }) => {
     try {
       console.log("[Asignaciones] Datos siendo enviados al backend:", data);
@@ -131,7 +144,7 @@ export function useAsignacionesController() {
           createdId = match?.id;
         }
         if (createdId) {
-          await obtenerUrlActa(createdId); // abre modal con el PDF
+          await obtenerUrlActa(createdId);
         }
       } catch (err) {
         console.error("Error al previsualizar acta automáticamente:", err);
@@ -193,7 +206,6 @@ export function useAsignacionesController() {
     setPreviewUrl(null);
   };
 
-  // Versión antigua que abría ventana (la mantenemos por si se necesita, pero no se usará)
   const previsualizarActa = async (asignacionId: string) => {
     await obtenerUrlActa(asignacionId);
   };
@@ -247,9 +259,9 @@ export function useAsignacionesController() {
     registrarDevolucion,
     descargarActa,
     previsualizarActa,
-    obtenerUrlActa,  // <-- nueva función para abrir modal
-    cerrarPreview,   // <-- para cerrar modal
-    previewUrl,      // <-- URL del blob
+    obtenerUrlActa,
+    cerrarPreview,
+    previewUrl,
     descargarHojaVida,
     updateAsignacion,
     loading,
@@ -257,4 +269,3 @@ export function useAsignacionesController() {
     refetch: fetchData,
   };
 }
-

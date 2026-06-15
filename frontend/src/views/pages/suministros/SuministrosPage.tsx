@@ -1,358 +1,528 @@
-// VIEW: Página Suministros — Toners, Licencias, Cables
-// Tabs por tipo de suministro con CRUD completo
-
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+// VIEW: Página Suministros — CRUD + Kardex de movimientos (completo)
+import { useState, useEffect, useCallback } from 'react';
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
 } from '../../components/ui/index';
-import { Plus, Printer, Key, Cable, Box, AlertTriangle, Pencil, Trash2, Upload } from 'lucide-react';
-import type { Suministro, TipoSuministro, EstadoSuministro } from '../../../models/types/index';
-import { suministrosApi, importarApi } from '../../../services/api';
-import type { ImportarResult } from '../../../services/api';
+import { Plus, History, Package, AlertTriangle, Pencil, Trash2, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { suministrosApi, usuariosApi, movimientosApi, solicitantesApi } from '../../../services/api';
+import type { Usuario } from '../../../models/types/index';
+import { useAuthStore } from '../../../models/stores/useAuthStore';
 
-// ─── Constantes ───────────────────────────────────────────────────────────────
+interface SuministroConStock {
+  id: string;
+  nombre: string;
+  tipo: string;
+  referencia?: string;
+  marca?: string;
+  modelo?: string;
+  cantidad: number;
+  cantidad_minima: number;
+  estado: string;
+  proveedor?: string;
+  observaciones?: string;
+  stock_actual?: number;
+}
 
-const TIPOS: { tipo: TipoSuministro; label: string; icon: React.ReactNode; path: string }[] = [
-  { tipo: 'Toner',    label: 'Toners',    icon: <Printer size={16} />, path: '/suministros/toners'    },
-  { tipo: 'Licencia', label: 'Licencias', icon: <Key     size={16} />, path: '/suministros/licencias' },
-  { tipo: 'Cable',    label: 'Cables',    icon: <Cable   size={16} />, path: '/suministros/cables'    },
-  { tipo: 'Rollo',    label: 'Rollos',    icon: <Box     size={16} />, path: '/suministros/rollos'    },
-];
-
-const ESTADOS: EstadoSuministro[] = ['Disponible', 'Agotado', 'Reservado', 'Baja'];
-
-const estadoBadge: Record<EstadoSuministro, 'green' | 'red' | 'yellow' | 'gray'> = {
-  Disponible: 'green',
-  Agotado:    'red',
-  Reservado:  'yellow',
-  Baja:       'gray',
-};
-
-const TIPO_FROM_PATH: Record<string, TipoSuministro> = {
-  toners:    'Toner',
-  licencias: 'Licencia',
-  cables:    'Cable',
-  rollos:    'Rollo',
-};
-
-const EMPTY_FORM: Partial<Suministro> = {
-  cantidad: 1, cantidad_minima: 1, estado: 'Disponible',
-};
-
-// ─── Componente principal ─────────────────────────────────────────────────────
+interface Movimiento {
+  id: string;
+  suministro_id: string;
+  tipo_movimiento: 'entrada' | 'salida';
+  cantidad: number;
+  fecha: string;
+  usuario_sistema_nombre?: string;
+  solicitante_nombre?: string;
+  area_solicitante?: string;
+  motivo?: string;
+  comprobante?: string;
+  observaciones?: string;
+  saldo_parcial?: number;
+}
 
 export function SuministrosPage() {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const isAdmin = user?.rol === 'admin';
 
-  // Inferir pestaña activa desde la URL (/suministros/toners, etc.)
-  const segment   = location.pathname.split('/').pop() ?? '';
-  const tipoActivo: TipoSuministro = TIPO_FROM_PATH[segment] ?? 'Toner';
+  // Estados listado suministros
+  const [items, setItems] = useState<SuministroConStock[]>([]);
+  const [total, setTotal] = useState(0);
+  const [busqueda, setBusqueda] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [solicitantes, setSolicitantes] = useState<{ id: string; nombre: string }[]>([]);
 
-  const [items,       setItems]       = useState<Suministro[]>([]);
-  const [total,       setTotal]       = useState(0);
-  const [busqueda,    setBusqueda]    = useState('');
-  const [filtroEstado, setFiltroEstado] = useState<EstadoSuministro | ''>('');
-  const [loading,     setLoading]     = useState(false);
-  const [error,       setError]       = useState<string | null>(null);
-  const [importLoading, setImportLoading] = useState(false);
-  const [importResultado, setImportResultado] = useState<ImportarResult | null>(null);
-  const [importMessage, setImportMessage] = useState<string | null>(null);
-  const [modalAbierto, setModalAbierto] = useState(false);
-  const [modoEdicion,  setModoEdicion]  = useState(false);
-  const [selected,     setSelected]    = useState<Suministro | null>(null);
-  const [form,         setForm]        = useState<Partial<Suministro>>(EMPTY_FORM);
+  // Estados para Kardex
+  const [kardexSuministro, setKardexSuministro] = useState<SuministroConStock | null>(null);
+  const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
+  const [showKardexModal, setShowKardexModal] = useState(false);
+  const [showMovimientoForm, setShowMovimientoForm] = useState(false);
+  const [movimientoLoading, setMovimientoLoading] = useState(false);
+  const [movimientosTotal, setMovimientosTotal] = useState(0);
+  const [movimientosPage, setMovimientosPage] = useState(0);
+  const [movimientosLimit] = useState(20);
+  const [filtroFechaDesde, setFiltroFechaDesde] = useState('');
+  const [filtroFechaHasta, setFiltroFechaHasta] = useState('');
 
-  // ── Carga ──────────────────────────────────────────────────────────────────
-  const fetchData = useCallback(async () => {
+  // Formulario de movimiento
+  const [formMovimiento, setFormMovimiento] = useState({
+    tipo: 'entrada' as 'entrada' | 'salida',
+    cantidad: 1,
+    solicitante_id: '',
+    area: '',
+    motivo: '',
+    comprobante: '',
+    observaciones: ''
+  });
+
+  // Editar movimiento
+  const [editandoMovimiento, setEditandoMovimiento] = useState<Movimiento | null>(null);
+  const [showEditMovimientoForm, setShowEditMovimientoForm] = useState(false);
+  const [editForm, setEditForm] = useState({
+    tipo: 'entrada' as 'entrada' | 'salida',
+    cantidad: 1,
+    solicitante_id: '',
+    area: '',
+    motivo: '',
+    comprobante: '',
+    observaciones: ''
+  });
+
+  // CRUD suministros
+  const [showSuministroModal, setShowSuministroModal] = useState(false);
+  const [editandoSuministro, setEditandoSuministro] = useState<SuministroConStock | null>(null);
+  const [suministroForm, setSuministroForm] = useState({
+    nombre: '',
+    tipo: 'Toner' as 'Toner' | 'Licencia' | 'Cable' | 'Rollo' | 'Otro',
+    referencia: '',
+    marca: '',
+    modelo: '',
+    cantidad: 1,
+    cantidad_minima: 1,
+    estado: 'Disponible' as 'Disponible' | 'Agotado' | 'Reservado' | 'Baja',
+    proveedor: '',
+    observaciones: ''
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Carga inicial
+  // ──────────────────────────────────────────────────────────────────────────
+  const fetchItems = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await suministrosApi.getAll({
-        tipo:    tipoActivo,
         busqueda: busqueda || undefined,
-        estado:  filtroEstado || undefined,
+        estado: filtroEstado || undefined,
       });
-      setItems(res.data);
+      setItems(res.data as SuministroConStock[]);
       setTotal(res.total);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar suministros.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cargar suministros');
     } finally {
       setLoading(false);
     }
-  }, [tipoActivo, busqueda, filtroEstado]);
+  }, [busqueda, filtroEstado]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const handleImportClick = () => {
-    setImportResultado(null);
-    setImportMessage(null);
-    setError(null);
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] ?? null;
-    if (!file) return;
-    setImportLoading(true);
-    setImportResultado(null);
-    setImportMessage(null);
-    setError(null);
+  const fetchUsuarios = useCallback(async () => {
     try {
-      const res = await importarApi.upload('suministros', file);
-      setImportResultado(res);
-      if (res.insertados > 0) {
-        await fetchData();
-      }
-      if (res.errores && res.errores.length > 0) {
-        setError(`Importado con errores: ${res.errores.length} fila(s) con problema.`);
-      } else {
-        setImportMessage(`Importación exitosa: ${res.insertados} registro(s) insertados.`);
-      }
+      const res = await usuariosApi.getAll();
+      setUsuarios(res.data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al importar archivo.');
+      console.error('Error cargando usuarios:', err);
+    }
+  }, []);
+
+  const fetchSolicitantes = useCallback(async () => {
+    try {
+      const res = await solicitantesApi.getAll();
+      setSolicitantes(res.data);
+    } catch (err) {
+      console.error('Error cargando solicitantes:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchItems();
+    fetchUsuarios();
+    fetchSolicitantes();
+  }, [fetchItems, fetchUsuarios, fetchSolicitantes]);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Funciones de movimientos (Kardex)
+  // ──────────────────────────────────────────────────────────────────────────
+  const fetchMovimientos = async (suministroId: string, page: number = 0) => {
+    setMovimientoLoading(true);
+    try {
+      const params: any = { limit: movimientosLimit, offset: page * movimientosLimit };
+      if (filtroFechaDesde) params.fecha_desde = filtroFechaDesde;
+      if (filtroFechaHasta) params.fecha_hasta = filtroFechaHasta;
+      const res = await movimientosApi.getBySuministro(suministroId, params);
+      setMovimientos(res.data);
+      setMovimientosTotal(res.total);
+      setMovimientosPage(page);
+    } catch (err) {
+      console.error(err);
+      alert('No se pudieron cargar los movimientos');
     } finally {
-      setImportLoading(false);
-      // allow re-selecting same file
-      e.currentTarget.value = '';
+      setMovimientoLoading(false);
     }
   };
 
-  // ── CRUD ───────────────────────────────────────────────────────────────────
-  const handleGuardar = async () => {
-    if (!form.nombre) return;
+  const verHistorial = async (suministro: SuministroConStock) => {
+    setKardexSuministro(suministro);
+    setMovimientosPage(0);
+    setFiltroFechaDesde('');
+    setFiltroFechaHasta('');
+    await fetchMovimientos(suministro.id, 0);
+    setShowKardexModal(true);
+  };
+
+  const handleCrearMovimiento = async () => {
+    if (formMovimiento.cantidad <= 0) {
+      alert('La cantidad debe ser mayor a 0');
+      return;
+    }
+    if (formMovimiento.tipo === 'salida' && kardexSuministro && formMovimiento.cantidad > (kardexSuministro.cantidad || 0)) {
+      alert('No hay suficiente stock disponible');
+      return;
+    }
     try {
-      if (modoEdicion && selected) {
-        await suministrosApi.update(selected.id, form);
+      await movimientosApi.create(kardexSuministro!.id, {
+        tipo: formMovimiento.tipo,
+        cantidad: formMovimiento.cantidad,
+        motivo: formMovimiento.motivo,
+        solicitante_id: formMovimiento.solicitante_id || null,
+        area: formMovimiento.area || null,
+        comprobante: formMovimiento.comprobante || null,
+        observaciones: formMovimiento.observaciones || null
+      });
+      alert('Movimiento registrado correctamente');
+      setShowMovimientoForm(false);
+      setFormMovimiento({
+        tipo: 'entrada',
+        cantidad: 1,
+        solicitante_id: '',
+        area: '',
+        motivo: '',
+        comprobante: '',
+        observaciones: ''
+      });
+      await fetchMovimientos(kardexSuministro!.id, movimientosPage);
+      await fetchItems();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al registrar movimiento');
+    }
+  };
+
+  const handleEditMovimiento = async () => {
+    if (!editandoMovimiento) return;
+    try {
+      await movimientosApi.update(editandoMovimiento.id, {
+        tipo: editForm.tipo,
+        cantidad: editForm.cantidad,
+        motivo: editForm.motivo,
+        solicitante_id: editForm.solicitante_id || null,
+        area_solicitante: editForm.area || null,
+        comprobante: editForm.comprobante || null,
+        observaciones: editForm.observaciones || null
+      });
+      alert('Movimiento actualizado');
+      setShowEditMovimientoForm(false);
+      await fetchMovimientos(kardexSuministro!.id, movimientosPage);
+      await fetchItems();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al actualizar movimiento');
+    }
+  };
+
+  const handleDeleteMovimiento = async (movimiento: Movimiento) => {
+    if (!confirm('¿Eliminar este movimiento? Se ajustará el stock automáticamente.')) return;
+    try {
+      await movimientosApi.remove(movimiento.id);
+      alert('Movimiento eliminado');
+      await fetchMovimientos(kardexSuministro!.id, movimientosPage);
+      await fetchItems();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al eliminar movimiento');
+    }
+  };
+
+  const exportarMovimientos = async () => {
+    if (!kardexSuministro) return;
+    try {
+      const params: any = {};
+      if (filtroFechaDesde) params.fecha_desde = filtroFechaDesde;
+      if (filtroFechaHasta) params.fecha_hasta = filtroFechaHasta;
+      const blob = await movimientosApi.exportCsv(kardexSuministro.id, params);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `movimientos_${kardexSuministro.id}_${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Error al exportar');
+    }
+  };
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // CRUD suministros (crear, editar, eliminar)
+  // ──────────────────────────────────────────────────────────────────────────
+  const abrirCrearSuministro = () => {
+    setEditandoSuministro(null);
+    setSuministroForm({
+      nombre: '',
+      tipo: 'Toner',
+      referencia: '',
+      marca: '',
+      modelo: '',
+      cantidad: 1,
+      cantidad_minima: 1,
+      estado: 'Disponible',
+      proveedor: '',
+      observaciones: ''
+    });
+    setShowSuministroModal(true);
+  };
+
+  const abrirEditarSuministro = (suministro: SuministroConStock) => {
+    setEditandoSuministro(suministro);
+    setSuministroForm({
+      nombre: suministro.nombre,
+      tipo: suministro.tipo as any,
+      referencia: suministro.referencia || '',
+      marca: suministro.marca || '',
+      modelo: suministro.modelo || '',
+      cantidad: suministro.cantidad,
+      cantidad_minima: suministro.cantidad_minima,
+      estado: suministro.estado as any,
+      proveedor: suministro.proveedor || '',
+      observaciones: suministro.observaciones || ''
+    });
+    setShowSuministroModal(true);
+  };
+
+  const guardarSuministro = async () => {
+    if (!suministroForm.nombre) {
+      alert('El nombre es obligatorio');
+      return;
+    }
+    try {
+      const dataParaApi = { ...suministroForm, tipo: suministroForm.tipo as any };
+      if (editandoSuministro) {
+        await suministrosApi.update(editandoSuministro.id, dataParaApi);
+        alert('Suministro actualizado correctamente');
       } else {
-        await suministrosApi.create({ ...EMPTY_FORM, ...form, tipo: tipoActivo } as Omit<Suministro, 'id' | 'fecha_registro' | 'equipo_placa'>);
+        await suministrosApi.create(dataParaApi);
+        alert('Suministro creado correctamente');
       }
-      setModalAbierto(false);
-      fetchData();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al guardar.');
+      setShowSuministroModal(false);
+      fetchItems();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al guardar suministro');
     }
   };
 
-  const handleEliminar = async (id: string) => {
-    if (!confirm('¿Eliminar este suministro?')) return;
+  const eliminarSuministro = async (suministro: SuministroConStock) => {
+    if (confirm(`¿Eliminar el suministro "${suministro.nombre}"? Esta acción no se puede deshacer.`)) {
+      try {
+        await suministrosApi.remove(suministro.id);
+        alert('Suministro eliminado');
+        fetchItems();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Error al eliminar suministro');
+      }
+    }
+  };
+
+  const formatearFecha = (fecha: any): string => {
+    if (!fecha) return '—';
     try {
-      await suministrosApi.remove(id);
-      fetchData();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al eliminar.');
+      let date: Date;
+      if (typeof fecha === 'string') {
+        const timestamp = Date.parse(fecha);
+        if (isNaN(timestamp)) return 'Fecha inválida';
+        date = new Date(timestamp);
+      } else if (fecha instanceof Date) {
+        date = fecha;
+      } else {
+        return '—';
+      }
+      if (isNaN(date.getTime())) return 'Fecha inválida';
+      return date.toLocaleDateString('es-CO');
+    } catch {
+      return '—';
     }
   };
 
-  const abrirCrear = () => {
-    setForm({ ...EMPTY_FORM, tipo: tipoActivo });
-    setModoEdicion(false);
-    setSelected(null);
-    setModalAbierto(true);
-  };
-
-  const abrirEditar = (item: Suministro) => {
-    setForm(item);
-    setModoEdicion(true);
-    setSelected(item);
-    setModalAbierto(true);
-  };
-
-  // ── Render ─────────────────────────────────────────────────────────────────
-  const tipoInfo = TIPOS.find((t) => t.tipo === tipoActivo)!;
-
+  // ──────────────────────────────────────────────────────────────────────────
+  // Render
+  // ──────────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-slate-200">
-        {TIPOS.map(({ tipo, label, icon, path }) => (
-          <button
-            key={tipo}
-            onClick={() => navigate(path)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              tipoActivo === tipo
-                ? 'border-blue-600 text-blue-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-            }`}
-          >
-            {icon}
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Error */}
-      {error && (
-        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-          <AlertTriangle size={16} /> {error}
-        </div>
-      )}
-
-      {/* Toolbar */}
+      {/* Toolbar suministros */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <SearchInput
-          value={busqueda}
-          onChange={setBusqueda}
-          placeholder={`Buscar ${tipoInfo.label.toLowerCase()}...`}
-        />
-        <select
-          value={filtroEstado}
-          onChange={(e) => setFiltroEstado(e.target.value as EstadoSuministro | '')}
-          className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
+        <SearchInput value={busqueda} onChange={setBusqueda} placeholder="Buscar suministros..." />
+        <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white">
           <option value="">Todos los estados</option>
-          {ESTADOS.map((s) => <option key={s}>{s}</option>)}
+          <option value="Disponible">Disponible</option>
+          <option value="Agotado">Agotado</option>
+          <option value="Reservado">Reservado</option>
+          <option value="Baja">Baja</option>
         </select>
-        <div className="sm:ml-auto flex items-center gap-2">
-          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
-          <Button icon={<Upload size={16} />} onClick={handleImportClick} className="hidden sm:inline-flex">
-            {importLoading ? 'Importando…' : 'Importar CSV'}
-          </Button>
-          <Button icon={<Plus size={16} />} onClick={abrirCrear} className="w-full sm:w-auto">
-            Nuevo {tipoInfo.label.slice(0, -1)}
-          </Button>
+        <div className="sm:ml-auto">
+          <Button icon={<Plus size={16} />} onClick={abrirCrearSuministro}>Nuevo suministro</Button>
         </div>
       </div>
 
-      {importMessage && (
-        <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
-          {importMessage}
-        </div>
-      )}
-
-      {/* Contador */}
-      <p className="text-sm text-slate-500">
-        Mostrando <strong>{items.length}</strong> de <strong>{total}</strong> {tipoInfo.label.toLowerCase()}
-      </p>
-
-      {/* Tabla */}
+      {/* Tabla de suministros */}
       <Card>
         {loading ? (
-          <div className="py-12 text-center text-sm text-slate-400">Cargando...</div>
-        ) : null}
-
-        {!loading && items.length === 0 ? (
-          <EmptyState
-            mensaje={`No se encontraron ${tipoInfo.label.toLowerCase()}.`}
-            icon={<span className="text-slate-300">{tipoInfo.icon}</span>}
-          />
-        ) : null}
-
-        {!loading && items.length > 0 ? (
+          <div className="py-10 text-center text-sm text-slate-400">Cargando...</div>
+        ) : items.length === 0 ? (
+          <EmptyState mensaje="No se encontraron suministros." icon={<Package size={40} />} />
+        ) : (
           <Table>
             <thead>
               <tr>
-                <Th>Nombre</Th>
-                {tipoActivo !== 'Cable' && <Th>Referencia / Modelo</Th>}
-                <Th>Marca</Th>
-                <Th>Cantidad</Th>
-                <Th>Mín.</Th>
-                <Th>Estado</Th>
-                {tipoActivo === 'Licencia' && <Th>Equipo</Th>}
-                <Th>Acciones</Th>
+                <Th>Nombre</Th><Th>Tipo</Th><Th>Referencia</Th>
+                <Th>Stock actual</Th><Th>Stock mínimo</Th><Th>Estado</Th><Th>Acciones</Th>
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                  <Td className="font-medium">{item.nombre}</Td>
-                  {tipoActivo !== 'Cable' && (
-                    <Td className="text-slate-500">{item.referencia ?? '—'}</Td>
-                  )}
-                  <Td>{item.marca ?? '—'}</Td>
-                  <Td>
-                    <span className={item.cantidad <= item.cantidad_minima ? 'text-red-600 font-semibold' : ''}>
-                      {item.cantidad}
-                    </span>
-                  </Td>
-                  <Td className="text-slate-400">{item.cantidad_minima}</Td>
-                  <Td>
-                    <Badge variant={estadoBadge[item.estado]}>{item.estado}</Badge>
-                  </Td>
-                  {tipoActivo === 'Licencia' && (
-                    <Td>
-                      {item.equipo_placa
-                        ? <span className="font-mono text-blue-700">{item.equipo_placa}</span>
-                        : <span className="text-slate-400">—</span>}
+              {items.map((item) => {
+                const isLowStock = item.cantidad <= item.cantidad_minima;
+                return (
+                  <tr key={item.id} className="hover:bg-slate-50">
+                    <Td className="font-medium">{item.nombre}</Td>
+                    <Td>{item.tipo}</Td>
+                    <Td>{item.referencia || '—'}</Td>
+                    <Td className={isLowStock ? 'text-red-600 font-semibold' : ''}>{item.cantidad}</Td>
+                    <Td className={isLowStock ? 'text-red-600 font-semibold' : ''}>{item.cantidad_minima}</Td>
+                    <Td><Badge variant={item.estado === 'Disponible' ? 'green' : item.estado === 'Agotado' ? 'red' : item.estado === 'Reservado' ? 'yellow' : 'gray'}>{item.estado}</Badge></Td>
+                    <Td className="flex gap-1">
+                      <Button variant="ghost" size="sm" icon={<History size={14} />} onClick={() => verHistorial(item)} title="Historial" />
+                      <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => abrirEditarSuministro(item)} title="Editar" />
+                      <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={() => eliminarSuministro(item)} title="Eliminar" className="text-red-500" />
                     </Td>
-                  )}
-                  <Td>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => abrirEditar(item)}>
-                        Editar
-                      </Button>
-                      <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={() => handleEliminar(item.id)}
-                        className="text-red-500 hover:text-red-700">
-                        Eliminar
-                      </Button>
-                    </div>
-                  </Td>
-                </tr>
-              ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </Table>
-        ) : null}
+        )}
       </Card>
 
-      {/* Modal Crear / Editar */}
-      <Modal
-        abierto={modalAbierto}
-        onCerrar={() => setModalAbierto(false)}
-        titulo={modoEdicion ? `Editar ${tipoInfo.label.slice(0, -1)}` : `Nuevo ${tipoInfo.label.slice(0, -1)}`}
-        size="md"
-      >
+      {/* Modal Kardex */}
+      <Modal abierto={showKardexModal} onCerrar={() => setShowKardexModal(false)} titulo={`Movimientos - ${kardexSuministro?.nombre || ''}`} size="xl">
+        {kardexSuministro && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3 p-3 bg-slate-50 rounded-lg">
+              <div><span className="font-semibold">Stock actual:</span> {kardexSuministro.cantidad}</div>
+              <div><span className="font-semibold">Stock mínimo:</span> {kardexSuministro.cantidad_minima}</div>
+              <div>{kardexSuministro.cantidad <= kardexSuministro.cantidad_minima && <span className="text-amber-600"><AlertTriangle size={14} /> Stock bajo</span>}</div>
+            </div>
+
+            {/* Filtros y acciones */}
+            <div className="flex flex-wrap gap-2 items-end">
+              <div><label className="text-xs text-slate-500">Desde</label><input type="date" value={filtroFechaDesde} onChange={(e) => setFiltroFechaDesde(e.target.value)} className="border rounded px-2 py-1 text-sm" /></div>
+              <div><label className="text-xs text-slate-500">Hasta</label><input type="date" value={filtroFechaHasta} onChange={(e) => setFiltroFechaHasta(e.target.value)} className="border rounded px-2 py-1 text-sm" /></div>
+              <Button size="sm" onClick={() => fetchMovimientos(kardexSuministro.id, 0)}>Filtrar</Button>
+              <Button size="sm" variant="outline" icon={<Download size={14} />} onClick={exportarMovimientos}>Exportar CSV</Button>
+              <Button variant="primary" size="sm" onClick={() => setShowMovimientoForm(true)}>+ Movimiento</Button>
+            </div>
+
+            {movimientoLoading ? (
+              <div className="py-6 text-center">Cargando...</div>
+            ) : movimientos.length === 0 ? (
+              <div className="py-6 text-center text-slate-400">No hay movimientos con estos filtros</div>
+            ) : (
+              <>
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Fecha</Th><Th>Tipo</Th><Th>Cantidad</Th><Th>Saldo</Th>
+                      <Th>Responsable</Th><Th>Solicitante/Área</Th><Th>Motivo</Th><Th>Comprobante</Th>
+                      {isAdmin && <Th>Acciones</Th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movimientos.map((m) => (
+                      <tr key={m.id}>
+                        <Td>{formatearFecha(m.fecha)}</Td>
+                        <Td><Badge variant={m.tipo_movimiento === 'entrada' ? 'green' : 'orange'}>{m.tipo_movimiento === 'entrada' ? 'Entrada' : 'Salida'}</Badge></Td>
+                        <Td>{m.cantidad}</Td>
+                        <Td className="font-mono">{m.saldo_parcial}</Td>
+                        <Td>{m.usuario_sistema_nombre || '—'}</Td>
+                        <Td>{m.solicitante_nombre || m.area_solicitante || '—'}</Td>
+                        <Td>{m.motivo || '—'}</Td>
+                        <Td>{m.comprobante || '—'}</Td>
+                        {isAdmin && (
+                          <Td>
+                            <div className="flex gap-1">
+                              <button onClick={() => { setEditandoMovimiento(m); setEditForm({ tipo: m.tipo_movimiento, cantidad: m.cantidad, solicitante_id: '', area: m.area_solicitante || '', motivo: m.motivo || '', comprobante: m.comprobante || '', observaciones: m.observaciones || '' }); setShowEditMovimientoForm(true); }} className="text-blue-600"><Pencil size={14} /></button>
+                              <button onClick={() => handleDeleteMovimiento(m)} className="text-red-600"><Trash2 size={14} /></button>
+                            </div>
+                          </Td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+                <div className="flex justify-between items-center mt-4">
+                  <Button variant="outline" size="sm" disabled={movimientosPage === 0} onClick={() => fetchMovimientos(kardexSuministro.id, movimientosPage - 1)}><ChevronLeft size={14} /> Anterior</Button>
+                  <span className="text-sm">Página {movimientosPage + 1} de {Math.ceil(movimientosTotal / movimientosLimit)}</span>
+                  <Button variant="outline" size="sm" disabled={(movimientosPage + 1) * movimientosLimit >= movimientosTotal} onClick={() => fetchMovimientos(kardexSuministro.id, movimientosPage + 1)}>Siguiente <ChevronRight size={14} /></Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal crear movimiento (simplificado, pero incluye select de solicitantes) */}
+      <Modal abierto={showMovimientoForm} onCerrar={() => setShowMovimientoForm(false)} titulo="Registrar movimiento" size="sm">
+        <div className="space-y-4">
+          <SelectField label="Tipo" value={formMovimiento.tipo} onChange={(e) => setFormMovimiento({ ...formMovimiento, tipo: e.target.value as 'entrada' | 'salida' })} options={[{ value: 'entrada', label: 'Entrada' }, { value: 'salida', label: 'Salida' }]} />
+          <Field label="Cantidad" type="number" value={formMovimiento.cantidad} onChange={(e) => setFormMovimiento({ ...formMovimiento, cantidad: parseInt(e.target.value) || 0 })} />
+          <SelectField label="Solicitante" value={formMovimiento.solicitante_id} onChange={(e) => setFormMovimiento({ ...formMovimiento, solicitante_id: e.target.value, area: '' })} options={[{ value: '', label: 'Seleccione...' }, ...solicitantes.map(s => ({ value: s.id, label: s.nombre }))]} />
+          <Field label="Área (si no está en lista)" value={formMovimiento.area} onChange={(e) => setFormMovimiento({ ...formMovimiento, area: e.target.value, solicitante_id: '' })} placeholder="Ej: Tecnología" />
+          <Field label="Motivo" value={formMovimiento.motivo} onChange={(e) => setFormMovimiento({ ...formMovimiento, motivo: e.target.value })} />
+          <Field label="Comprobante" value={formMovimiento.comprobante} onChange={(e) => setFormMovimiento({ ...formMovimiento, comprobante: e.target.value })} />
+          <Field label="Observaciones" value={formMovimiento.observaciones} onChange={(e) => setFormMovimiento({ ...formMovimiento, observaciones: e.target.value })} />
+        </div>
+        <div className="flex justify-end gap-2 mt-6"><Button variant="secondary" onClick={() => setShowMovimientoForm(false)}>Cancelar</Button><Button onClick={handleCrearMovimiento}>Guardar</Button></div>
+      </Modal>
+
+      {/* Modal editar movimiento (similar) */}
+      <Modal abierto={showEditMovimientoForm} onCerrar={() => setShowEditMovimientoForm(false)} titulo="Editar movimiento" size="sm">
+        <div className="space-y-4">
+          <SelectField label="Tipo" value={editForm.tipo} onChange={(e) => setEditForm({ ...editForm, tipo: e.target.value as 'entrada' | 'salida' })} options={[{ value: 'entrada', label: 'Entrada' }, { value: 'salida', label: 'Salida' }]} />
+          <Field label="Cantidad" type="number" value={editForm.cantidad} onChange={(e) => setEditForm({ ...editForm, cantidad: parseInt(e.target.value) || 0 })} />
+          <SelectField label="Solicitante" value={editForm.solicitante_id} onChange={(e) => setEditForm({ ...editForm, solicitante_id: e.target.value, area: '' })} options={[{ value: '', label: 'Seleccione...' }, ...solicitantes.map(s => ({ value: s.id, label: s.nombre }))]} />
+          <Field label="Área" value={editForm.area} onChange={(e) => setEditForm({ ...editForm, area: e.target.value })} />
+          <Field label="Motivo" value={editForm.motivo} onChange={(e) => setEditForm({ ...editForm, motivo: e.target.value })} />
+          <Field label="Comprobante" value={editForm.comprobante} onChange={(e) => setEditForm({ ...editForm, comprobante: e.target.value })} />
+          <Field label="Observaciones" value={editForm.observaciones} onChange={(e) => setEditForm({ ...editForm, observaciones: e.target.value })} />
+        </div>
+        <div className="flex justify-end gap-2 mt-6"><Button variant="secondary" onClick={() => setShowEditMovimientoForm(false)}>Cancelar</Button><Button onClick={handleEditMovimiento}>Actualizar</Button></div>
+      </Modal>
+
+      {/* Modal suministro (crear/editar) */}
+      <Modal abierto={showSuministroModal} onCerrar={() => setShowSuministroModal(false)} titulo={editandoSuministro ? 'Editar suministro' : 'Nuevo suministro'} size="lg">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field
-            label="Nombre *"
-            value={form.nombre ?? ''}
-            onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
-            className="sm:col-span-2"
-          />
-          {tipoActivo !== 'Cable' && (
-            <Field
-              label={tipoActivo === 'Licencia' ? 'Clave / Serial' : 'Referencia / Modelo'}
-              value={form.referencia ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, referencia: e.target.value }))}
-            />
-          )}
-          <Field
-            label="Marca"
-            value={form.marca ?? ''}
-            onChange={(e) => setForm((f) => ({ ...f, marca: e.target.value }))}
-          />
-          <Field
-            label="Cantidad"
-            type="number"
-            value={form.cantidad?.toString() ?? '1'}
-            onChange={(e) => setForm((f) => ({ ...f, cantidad: Number(e.target.value) }))}
-          />
-          <Field
-            label="Cantidad mínima"
-            type="number"
-            value={form.cantidad_minima?.toString() ?? '1'}
-            onChange={(e) => setForm((f) => ({ ...f, cantidad_minima: Number(e.target.value) }))}
-          />
-          <SelectField
-            label="Estado"
-            value={form.estado ?? 'Disponible'}
-            onChange={(e) => setForm((f) => ({ ...f, estado: e.target.value as EstadoSuministro }))}
-            options={ESTADOS.map((s) => ({ value: s, label: s }))}
-            className="sm:col-span-2"
-          />
-          <Field
-            label="Observaciones"
-            value={form.observaciones ?? ''}
-            onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))}
-            className="sm:col-span-2"
-          />
+          <Field label="Nombre *" value={suministroForm.nombre} onChange={(e) => setSuministroForm({ ...suministroForm, nombre: e.target.value })} className="sm:col-span-2" />
+          <SelectField label="Tipo" value={suministroForm.tipo} onChange={(e) => setSuministroForm({ ...suministroForm, tipo: e.target.value as any })} options={[{ value: 'Toner', label: 'Toner' }, { value: 'Licencia', label: 'Licencia' }, { value: 'Cable', label: 'Cable' }, { value: 'Rollo', label: 'Rollo' }, { value: 'Otro', label: 'Otro' }]} />
+          <Field label="Referencia" value={suministroForm.referencia} onChange={(e) => setSuministroForm({ ...suministroForm, referencia: e.target.value })} />
+          <Field label="Marca" value={suministroForm.marca} onChange={(e) => setSuministroForm({ ...suministroForm, marca: e.target.value })} />
+          <Field label="Cantidad" type="number" value={suministroForm.cantidad} onChange={(e) => setSuministroForm({ ...suministroForm, cantidad: parseInt(e.target.value) || 0 })} />
+          <Field label="Cantidad mínima" type="number" value={suministroForm.cantidad_minima} onChange={(e) => setSuministroForm({ ...suministroForm, cantidad_minima: parseInt(e.target.value) || 0 })} />
+          <SelectField label="Estado" value={suministroForm.estado} onChange={(e) => setSuministroForm({ ...suministroForm, estado: e.target.value as any })} options={[{ value: 'Disponible', label: 'Disponible' }, { value: 'Agotado', label: 'Agotado' }, { value: 'Reservado', label: 'Reservado' }, { value: 'Baja', label: 'Baja' }]} />
+          <Field label="Proveedor" value={suministroForm.proveedor} onChange={(e) => setSuministroForm({ ...suministroForm, proveedor: e.target.value })} className="sm:col-span-2" />
+          <Field label="Observaciones" value={suministroForm.observaciones} onChange={(e) => setSuministroForm({ ...suministroForm, observaciones: e.target.value })} className="sm:col-span-2" />
         </div>
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
-          <Button variant="outline" onClick={() => setModalAbierto(false)}>Cancelar</Button>
-          <Button onClick={handleGuardar}>{modoEdicion ? 'Guardar cambios' : 'Registrar'}</Button>
-        </div>
+        <div className="flex justify-end gap-2 mt-6"><Button variant="secondary" onClick={() => setShowSuministroModal(false)}>Cancelar</Button><Button onClick={guardarSuministro}>Guardar</Button></div>
       </Modal>
     </div>
   );

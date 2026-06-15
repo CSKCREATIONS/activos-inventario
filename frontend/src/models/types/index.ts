@@ -19,7 +19,7 @@ export interface Usuario {
   cargo: string;
   proceso: string;
   grupo_asignado: string;
-  area: string;
+  area: string | null;
   correo?: string | null;
   ubicacion?: string;
   sede?: string;
@@ -92,8 +92,12 @@ export interface Asignacion {
   firma_responsable?: string;
   fecha_firma?: string;
   sede?: string;
-  tipo_usuario_asignado?: 'empleado' | 'cliente' | 'proyecto';   // ← agregar esto
-}
+  tipo_usuario_asignado?: 'empleado' | 'cliente' | 'proyecto';
+  equipo?: Equipo;        
+  firmas?: any[];        
+  todos_usuarios?: string;
+  cantidad_adicionales?: number;
+  }
 
 // ─── ACCESORIO ────────────────────────────────────────────────────────────────
 
@@ -118,7 +122,7 @@ export interface Documento {
   equipo_id?: string;
   asignacion_id?: string;
   usuario_id?: string;
-  area?: string;           // ← Nuevo campo
+  area?: string;           
   url: string;
   version: number;
   fecha_carga: string;
@@ -216,9 +220,10 @@ export interface EquipoMantenimiento {
   estado: string;
   responsable: string;
   area: string;
-  // other fields
 
 
 }
+
+
 
 

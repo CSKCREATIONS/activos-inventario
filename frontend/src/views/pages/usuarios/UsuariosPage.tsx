@@ -1,5 +1,5 @@
 // VIEW: Página Usuarios
-import { useMemo, useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useUsuariosController } from '../../../controllers/useUsuariosController';
 import {
   Button, SearchInput, Table, Th, Td, Modal, Card, EmptyState, Field, SelectField, Badge
@@ -8,44 +8,74 @@ import { Plus, Pencil, Eye, Users, AlertCircle } from 'lucide-react';
 import type { Usuario } from '../../../models/types/index';
 import { UsuarioDetalle } from './UsuarioDetalle';
 
+// Áreas fijas (reales)
+const AREAS_USUARIOS = [
+  'HSEQ', 'TALENTO HUMANO', 'TECNOLOGIA', 'FACTURACION', 'SERVICIO AL CLIENTE',
+  'RNDC', 'COMERCIAL', 'GERENCIA', 'ALMACENAMIENTO', 'FLOTA', 'SUMINISTROS',
+  'CUMPLIDOS', 'RECEPCION', 'TRAFICO', 'REGISTRO', 'OPERACIONES', 'CONTABILIDAD',
+  'TESORERIA', 'FISCAL'
+];
+
+const SEDES = ['Bogota', 'Yumbo', 'Sabaneta', 'La Estrella', 'Cartagena', 'Barranquilla', 'inHouse'];
+
 export function UsuariosPage() {
   const ctrl = useUsuariosController();
   const [vistaDetalle, setVistaDetalle] = useState<string | null>(null);
-  const [form, setForm] = useState<Partial<Usuario>>({ activo: true });
+  const [form, setForm] = useState<Partial<Usuario>>({
+    activo: true,
+    area: '__SIN_AREA__',        // valor especial para "Sin área"
+    tipo_usuario: 'empleado'
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const canSave = form.nombre && form.area;
-
-  const SEDES = [
-    'Bogota',
-    'Yumbo',
-    'Sabaneta',
-    'La Estrella',
-    'Cartagena',
-    'Barranquilla',
-    'inHouse',
-  ];
-
   const [filtroTipoUsuario, setFiltroTipoUsuario] = useState('');
 
-   const usuariosFiltrados = useMemo(() => {
-  if (!filtroTipoUsuario) return ctrl.usuarios;
-  return ctrl.usuarios.filter(u => u.tipo_usuario === filtroTipoUsuario);
-    }, [ctrl.usuarios, filtroTipoUsuario]);
+  // Filtros combinados
+  const usuariosFiltrados = useMemo(() => {
+    let filtered = ctrl.usuarios;
+
+    if (ctrl.busqueda) {
+      const q = ctrl.busqueda.toLowerCase();
+      filtered = filtered.filter(u =>
+        u.nombre.toLowerCase().includes(q) ||
+        (u.correo && u.correo.toLowerCase().includes(q)) ||
+        (u.area && u.area.toLowerCase().includes(q))
+      );
+    }
+
+    if (ctrl.filtroArea) {
+      filtered = filtered.filter(u => u.area === ctrl.filtroArea);
+    }
+
+    if (ctrl.filtroSede) {
+      filtered = filtered.filter(u => u.sede === ctrl.filtroSede);
+    }
+
+    if (filtroTipoUsuario) {
+      filtered = filtered.filter(u => u.tipo_usuario === filtroTipoUsuario);
+    }
+
+    return filtered;
+  }, [ctrl.usuarios, ctrl.busqueda, ctrl.filtroArea, ctrl.filtroSede, filtroTipoUsuario]);
+
+  const canSave = !!form.nombre; // Solo el nombre es obligatorio; área siempre tiene valor
 
   const handleGuardar = () => {
     const newErrors: Record<string, string> = {};
     if (!form.nombre) newErrors.nombre = "El nombre es requerido";
-    if (!form.area) newErrors.area = "El área es requerida";
+    // No validamos área porque siempre tendrá un valor (__SIN_AREA__ o un área real)
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
 
     setErrors({});
+    // Convertir __SIN_AREA__ a null para la base de datos
+    const areaParaBackend = form.area === '__SIN_AREA__' ? null : form.area;
     const payload = {
       ...form,
+      area: areaParaBackend,
       correo: form.correo?.trim() || '',
+      tipo_usuario: form.tipo_usuario || 'empleado',
     };
     if (ctrl.modoEdicion && ctrl.selectedUsuario) {
       ctrl.editarUsuario(ctrl.selectedUsuario.id, payload);
@@ -58,10 +88,9 @@ export function UsuariosPage() {
     return <UsuarioDetalle usuarioId={vistaDetalle} onVolver={() => setVistaDetalle(null)} />;
   }
 
- 
-
   return (
     <div className="space-y-4">
+      {/* Filtros */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <SearchInput value={ctrl.busqueda} onChange={ctrl.setBusqueda} placeholder="Buscar por nombre, correo, área..." />
         <select
@@ -91,7 +120,7 @@ export function UsuariosPage() {
           <option value="proyecto">Proyecto</option>
         </select>
         <div className="sm:ml-auto">
-          <Button icon={<Plus size={16} />} onClick={() => { setForm({ activo: true }); setErrors({}); ctrl.abrirCrear(); }} className="w-full sm:w-auto">
+          <Button icon={<Plus size={16} />} onClick={() => { setForm({ activo: true, area: '__SIN_AREA__', tipo_usuario: 'empleado' }); setErrors({}); ctrl.abrirCrear(); }} className="w-full sm:w-auto">
             Nuevo usuario
           </Button>
         </div>
@@ -100,12 +129,12 @@ export function UsuariosPage() {
       <p className="text-sm text-slate-500">
         Mostrando <strong>{usuariosFiltrados.length}</strong> de <strong>{ctrl.totalUsuarios}</strong> usuarios
       </p>
-      
 
+      {/* Tabla de usuarios */}
       <Card>
         {usuariosFiltrados.length === 0 ? (
-            <EmptyState mensaje="No se encontraron usuarios." icon={<Users size={40} />} />
-          ) : (
+          <EmptyState mensaje="No se encontraron usuarios." icon={<Users size={40} />} />
+        ) : (
           <Table>
             <thead>
               <tr>
@@ -137,11 +166,11 @@ export function UsuariosPage() {
                       u.tipo_usuario === 'cliente' ? 'green' : 'orange'
                     }>
                       {u.tipo_usuario === 'empleado' ? 'Empleado' :
-                      u.tipo_usuario === 'cliente' ? 'Cliente' : 'Proyecto'}
+                       u.tipo_usuario === 'cliente' ? 'Cliente' : 'Proyecto'}
                     </Badge>
                   </Td>
                   <Td>{u.cargo}</Td>
-                  <Td><Badge variant="indigo">{u.area}</Badge></Td>
+                  <Td><Badge variant="indigo">{u.area || '—'}</Badge></Td>
                   <Td>{u.sede || '-'}</Td>
                   <Td>{u.proceso}</Td>
                   <Td className="text-blue-600">{u.correo || '-'}</Td>
@@ -151,7 +180,7 @@ export function UsuariosPage() {
                   <Td>
                     <div className="flex items-center gap-1">
                       <Button variant="ghost" size="sm" icon={<Eye size={14} />} onClick={() => setVistaDetalle(u.id)}>Ver</Button>
-                      <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => { setForm(u); setErrors({}); ctrl.abrirEditar(u); }}>Editar</Button>
+                      <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => { setForm({ ...u, area: u.area || '__SIN_AREA__', tipo_usuario: u.tipo_usuario || 'empleado' }); setErrors({}); ctrl.abrirEditar(u); }}>Editar</Button>
                     </div>
                   </Td>
                 </tr>
@@ -161,6 +190,7 @@ export function UsuariosPage() {
         )}
       </Card>
 
+      {/* Modal de creación/edición */}
       <Modal
         abierto={ctrl.modalAbierto}
         onCerrar={() => { ctrl.cerrarModal(); setErrors({}); }}
@@ -179,10 +209,19 @@ export function UsuariosPage() {
             {errors.nombre && <p className="text-red-600 text-xs mt-1">{errors.nombre}</p>}
           </div>
           <Field label="Cargo" value={form.cargo ?? ''} onChange={(e) => setForm((f) => ({ ...f, cargo: e.target.value }))} />
-          <div className={errors.area ? "border border-red-500 rounded-lg p-2" : ""}>
-            <Field label="Área *" value={form.area ?? ''} onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))} />
-            {errors.area && <p className="text-red-600 text-xs mt-1">{errors.area}</p>}
-          </div>
+
+          {/* Área con opción "Sin área" (valor especial '__SIN_AREA__') */}
+          <SelectField
+            label="Área *"
+            value={form.area ?? '__SIN_AREA__'}
+            onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))}
+            options={[
+              { value: '__SIN_AREA__', label: 'Sin área' },
+              ...AREAS_USUARIOS.map(a => ({ value: a, label: a }))
+            ]}
+          />
+
+          {/* Tipo de usuario */}
           <SelectField
             label="Tipo de usuario"
             value={form.tipo_usuario ?? 'empleado'}
@@ -193,6 +232,7 @@ export function UsuariosPage() {
               { value: 'proyecto', label: 'Proyecto' }
             ]}
           />
+
           <SelectField
             label="Sede"
             value={form.sede ?? ''}

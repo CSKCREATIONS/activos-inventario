@@ -1,5 +1,5 @@
 // CONTROLLER: Usuarios
-// Lógica de búsqueda, CRUD y cálculo del perfil completo de un usuario — datos desde la API REST.
+// Lógica de búsqueda, CRUD y perfil de usuario — datos desde la API REST.
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useUsuariosStore } from '../models/stores/useUsuariosStore';
@@ -16,9 +16,12 @@ export function useUsuariosController() {
   const { equipos, setEquipos } = useEquiposStore();
   const { documentos, setDocumentos } = useDocumentosStore();
 
+  // Estados de filtros
   const [busqueda, setBusqueda] = useState('');
   const [filtroArea, setFiltroArea] = useState('');
   const [filtroSede, setFiltroSede] = useState('');
+  const [filtroTipoUsuario, setFiltroTipoUsuario] = useState(''); // nuevo filtro
+
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modoEdicion, setModoEdicion] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -48,25 +51,41 @@ export function useUsuariosController() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── Filtrado local ─────────────────────────────────────────────────────────
-  const areas = useMemo(() => [...new Set(usuarios.map((u) => u.area))].sort((a, b) => a.localeCompare(b)), [usuarios]);
-  const sedes = useMemo(() => [...new Set(usuarios.map((u) => u.sede || ''))].filter(Boolean).sort((a, b) => a.localeCompare(b)), [usuarios]);
+  // ── Listas para filtros (áreas y sedes) ────────────────────────────────────
+  const areas = useMemo(() => {
+  const uniqueAreas = [...new Set(usuarios.map((u) => u.area).filter((a): a is string => a !== null && a !== ''))];
+  return uniqueAreas.sort((a, b) => a.localeCompare(b));
+}, [usuarios]);
 
+const sedes = useMemo(() => {
+  const uniqueSedes = [...new Set(usuarios.map((u) => u.sede || '').filter((s): s is string => s !== null && s !== ''))];
+  return uniqueSedes.sort((a, b) => a.localeCompare(b));
+}, [usuarios]);
+
+  // Tipos de usuario disponibles (para filtro)
+  const tiposUsuario = useMemo(() => {
+    const tipos = new Set(usuarios.map((u) => u.tipo_usuario).filter(Boolean));
+    return Array.from(tipos).sort();
+  }, [usuarios]);
+
+  // ── Filtrado local combinado ────────────────────────────────────────────────
   const usuariosFiltrados = useMemo(() => {
     return usuarios.filter((u) => {
-      const b = busqueda.toLowerCase();
-      const match =
-        !b ||
-        u.nombre.toLowerCase().includes(b) ||
-        (u.correo ?? '').toLowerCase().includes(b) ||
-        u.area.toLowerCase().includes(b) ||
-        u.proceso.toLowerCase().includes(b);
+      const matchBusqueda = !busqueda ||
+        u.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+        (u.correo && u.correo.toLowerCase().includes(busqueda.toLowerCase())) ||
+        (u.area && u.area.toLowerCase().includes(busqueda.toLowerCase())) ||
+        (u.proceso && u.proceso.toLowerCase().includes(busqueda.toLowerCase()));
+
       const matchArea = !filtroArea || u.area === filtroArea;
       const matchSede = !filtroSede || (u.sede || '') === filtroSede;
-      return match && matchArea && matchSede;
-    });
-  }, [usuarios, busqueda, filtroArea, filtroSede]);
+      const matchTipo = !filtroTipoUsuario || u.tipo_usuario === filtroTipoUsuario;
 
+      return matchBusqueda && matchArea && matchSede && matchTipo;
+    });
+  }, [usuarios, busqueda, filtroArea, filtroSede, filtroTipoUsuario]);
+
+  // ── Perfil del usuario (asignaciones, documentos) ─────────────────────────
   const getPerfilUsuario = (usuarioId: string) => {
     const asignacionesActivas = asignaciones.filter(
       (a) => a.usuario_id === usuarioId && a.estado === 'Activa'
@@ -88,6 +107,7 @@ export function useUsuariosController() {
       setModalAbierto(false);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al crear usuario.');
+      throw err; // para que la vista pueda manejar el error si lo desea
     }
   };
 
@@ -99,6 +119,7 @@ export function useUsuariosController() {
       setModoEdicion(false);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al actualizar usuario.');
+      throw err;
     }
   };
 
@@ -108,9 +129,11 @@ export function useUsuariosController() {
       deleteUsuario(id);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al eliminar usuario.');
+      throw err;
     }
   };
 
+  // ── Control de modal ───────────────────────────────────────────────────────
   const abrirCrear = () => {
     setSelectedUsuario(null);
     setModoEdicion(false);
@@ -129,13 +152,26 @@ export function useUsuariosController() {
   };
 
   return {
+    // Datos
     usuarios: usuariosFiltrados,
     totalUsuarios: usuarios.length,
+    areas,
+    sedes,
+    tiposUsuario,        // nuevo
+    loading,
+    error,
+
+    // Filtros
     busqueda,
     setBusqueda,
     filtroArea,
     setFiltroArea,
-    areas,
+    filtroSede,
+    setFiltroSede,
+    filtroTipoUsuario,   // nuevo
+    setFiltroTipoUsuario,
+
+    // Modal y CRUD
     modalAbierto,
     modoEdicion,
     selectedUsuario,
@@ -147,11 +183,6 @@ export function useUsuariosController() {
     editarUsuario,
     deleteUsuario: eliminarUsuario,
     getPerfilUsuario,
-    loading,
-    error,
     refetch: fetchData,
-    filtroSede,
-    setFiltroSede,
-    sedes,
   };
 }

@@ -47,7 +47,7 @@ async def get_perfil(id: str):
 
 @router.post("", status_code=201)
 async def create(body: dict, current_user: dict = Depends(get_current_user)):
-    required = ["nombre", "area"]
+    required = ["nombre"]
     missing = [f for f in required if not body.get(f)]
     if missing:
         raise HTTPException(
