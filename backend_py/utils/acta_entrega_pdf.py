@@ -172,8 +172,35 @@ def generar_acta_entrega_pdf(
 
     if not plantilla_path or not Path(plantilla_path).exists():
         raise FileNotFoundError("No se encontró la plantilla PDF")
+    
+    
 
     tpl = PdfReader(plantilla_path)
+
+        # Determinar si es portátil
+    tipo_equipo = asignacion.get("tipo_equipo", "").lower()
+    es_portatil = tipo_equipo in ("laptop", "portátil", "notebook")
+    
+    from pypdf import PdfWriter as PdfWriter2
+    temp_writer = PdfWriter2()
+    
+    if es_portatil:
+        # Conservar todas las páginas (índices 0,1,2,3,4)
+        for i in range(len(tpl.pages)):
+            temp_writer.add_page(tpl.pages[i])
+    else:
+        # Desktop o All-in-one: eliminar la página 2 (índice 1)
+        # Conservar índices 0, 2, 3, 4 (páginas 1,3,4,5)
+        paginas_a_conservar = [0, 2, 3, 4]
+        for i in paginas_a_conservar:
+            if i < len(tpl.pages):
+                temp_writer.add_page(tpl.pages[i])
+    
+    # Reemplazar la plantilla original por la nueva (con páginas filtradas)
+    temp_bytes = io.BytesIO()
+    temp_writer.write(temp_bytes)
+    temp_bytes.seek(0)
+    tpl = PdfReader(temp_bytes)
     overlay = io.BytesIO()
     oc = Canvas(overlay, pagesize=LETTER)
 
