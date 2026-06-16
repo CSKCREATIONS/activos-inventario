@@ -536,14 +536,7 @@ export function AsignacionesPage() {
                               onClick={() => handleReenviarFirma(a.id)}
                               title="Reenviar correo de firma"
                             />
-                            {/* ✅ Botón obtener token */}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              icon={<Key size={12} />}
-                              onClick={() => handleMostrarToken(a.id)}
-                              title="Obtener token para pruebas"
-                            />
+                              
                         {a.estado === 'Activa' && (
                           <>
                             

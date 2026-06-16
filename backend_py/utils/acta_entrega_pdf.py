@@ -268,10 +268,10 @@ def generar_acta_entrega_pdf(
 
     # ================== FIRMAS ==================
     firma_x = 60
-    separacion = 45
+    separacion = 25
     # Valores Y según cantidad de firmas
     firma_y_single = 298   # para una sola firma (más baja)
-    firma_y_multi = 298    # para varias firmas (más alta)
+    firma_y_multi = 310   # para varias firmas (más alta)
 
     firmas = asignacion.get("firmas", [])
     
