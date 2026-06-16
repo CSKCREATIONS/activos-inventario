@@ -177,6 +177,8 @@ def generar_acta_entrega_pdf(
     overlay = io.BytesIO()
     oc = Canvas(overlay, pagesize=LETTER)
 
+    
+
     # ================== FECHA ==================
     fecha_txt = _fmt_date(asignacion.get("fecha_asignacion") or asignacion.get("fecha_acta"))
     if fecha_txt:
