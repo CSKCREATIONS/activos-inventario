@@ -281,7 +281,7 @@ def generar_acta_entrega_pdf(
 
     # ================== FIRMAS ==================
     firma_x = 60
-    separacion = 45
+    separacion = 25
     firma_y_single = 290
     firma_y_multi = 298
 
