@@ -11,7 +11,7 @@ from config.db import test_connection, close_pool
 from routes import (
     usuarios, equipos, asignaciones, accesorios,
     documentos, dashboard, susuarios, suministros,
-    auth, licencias, importar, movimientos_suministros, solicitantes, mantenimientos
+    auth, licencias, importar, movimientos_suministros, solicitantes, mantenimientos,firmas
 )
 from dependencies  import get_current_user
 from routes import audit
@@ -72,6 +72,7 @@ app.include_router(licencias.router,    prefix="/api/licencias",    tags=["Licen
 app.include_router(importar.router,     prefix="/api/importar",     tags=["Importar CSV"],    dependencies=protected)
 app.include_router(audit.router, prefix="/api/audit", tags=["Auditoría"], dependencies=protected)
 app.include_router(mantenimientos.router, prefix="/api", tags=["Mantenimientos"], dependencies=protected)
+app.include_router(firmas.router, prefix="/api", tags=["Firmas"], dependencies=protected)
 # Endpoints públicos: login/token + health
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 

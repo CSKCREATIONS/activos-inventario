@@ -170,7 +170,7 @@ export const asignacionesApi = {
     }),
 
   firmar: (id: string, body: { usuario_id: string; firma: string }) =>
-  request<{ message: string; filename: string }>(`/asignaciones/${id}/firmar`, { method: 'POST', body: JSON.stringify(body) }),
+  request(`/asignaciones/${id}/firmar-simple`, { method: 'POST', body: JSON.stringify(body) }),
   /** Genera/descarga el Acta de Entrega en PDF. Devuelve Blob + filename. */
 
   downloadActa: async (
@@ -547,3 +547,4 @@ export const mantenimientosApi = {
   listar: (equipoId: string) =>
     request<{ data: any[] }>(`/equipos/${equipoId}/mantenimientos`),
 };
+

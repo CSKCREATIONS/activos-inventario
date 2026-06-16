@@ -405,12 +405,29 @@ async def firmar_con_token(body: dict):
         "fecha": datetime.now().isoformat()
     }
     firmas.append(nueva_firma)
+    await AsignacionModel.update(id, {
+        "firmas": json.dumps(firmas)
+    })
 
-    await AsignacionModel.update(asignacion_id, {"firmas": json.dumps(firmas)})
+    # Volver a consultar la asignación
+    asignacion_actualizada = await AsignacionModel.find_by_id(id)
 
-    # (Opcional) Regenerar acta con firma
-    # ...
-    return {"message": "Acta firmada correctamente"}
+    print("FIRMAS RECARGADAS:")
+    print(asignacion_actualizada.get("firmas"))
+
+    # Regenerar usando los datos actualizados
+    cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
+
+    accesorios_textos = normalizar_accesorios_entregados(
+        asignacion_actualizada.get("accesorios_entregados")
+    )
+
+    await _generar_y_registrar_acta(
+        asignacion_actualizada,
+        accesorios_entregados=accesorios_textos,
+        cargado_por=cargado_por,
+        regenerar=True
+    )
 
 @router.put("/{id}")
 async def update(id: str, body: dict, current_user: dict = Depends(get_current_user)):
@@ -582,7 +599,75 @@ async def agregar_accesorio(
     )
 
     return {"message": "Accesorio agregado correctamente. Las firmas han sido reiniciadas y el acta regenerada.", "data": asignacion_actualizada}
+@router.post("/{id}/firmar")
+async def firmar_asignacion(
+    id: str,
+    body: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    from models.usuario import UsuarioModel
+    import json
+    from datetime import datetime
 
+    usuario_id = body.get("usuario_id")
+    firma_base64 = body.get("firma")
+
+    if not usuario_id or not firma_base64:
+        raise HTTPException(400, detail="usuario_id y firma son requeridos")
+
+    print(f"[FIRMAR] Asignación ID: {id}")
+    print(f"[FIRMAR] Usuario ID: {usuario_id}")
+
+    asignacion = await AsignacionModel.find_by_id(id)
+    if not asignacion:
+        raise HTTPException(404, detail="Asignación no encontrada")
+
+    # Verificar que el usuario está asignado
+    if asignacion["usuario_id"] != usuario_id and usuario_id not in (asignacion.get("usuarios_ids") or []):
+        raise HTTPException(400, detail="Usuario no asignado a este equipo")
+
+    # Obtener nombre del usuario (¡definir aquí la variable!)
+    usuario = await UsuarioModel.find_by_id(usuario_id)
+    nombre_usuario = usuario["nombre"] if usuario else "Usuario"
+    
+    print(f"[FIRMAR] Nombre usuario: {nombre_usuario}")
+
+    # Guardar firma
+    firmas = asignacion.get("firmas") or []
+    if isinstance(firmas, str):
+        firmas = json.loads(firmas)
+    
+    # Evitar duplicados
+    if any(f.get("user_id") == usuario_id for f in firmas):
+        raise HTTPException(400, detail="Este usuario ya ha firmado")
+    
+    nueva_firma = {
+        "user_id": usuario_id,
+        "nombre": nombre_usuario,
+        "signature": firma_base64,
+        "fecha": datetime.now().isoformat()
+    }
+    firmas.append(nueva_firma)
+    
+    await AsignacionModel.update(id, {"firmas": json.dumps(firmas)})
+    
+    print(f"[FIRMAR] Firmas totales después: {len(firmas)}")
+
+    # Regenerar acta para que incluya la firma
+    try:
+        from utils.accesorios import normalizar_accesorios_entregados
+        cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
+        accesorios_textos = normalizar_accesorios_entregados(asignacion.get("accesorios_entregados"))
+        await _generar_y_registrar_acta(
+            asignacion,
+            accesorios_entregados=accesorios_textos,
+            cargado_por=cargado_por,
+            regenerar=True
+        )
+    except Exception as e:
+        print(f"Error regenerando acta: {e}")
+
+    return {"message": "Firma registrada correctamente"}
 
 @router.get("/{id}/token-firma")
 async def obtener_token_firma(
@@ -644,3 +729,107 @@ async def reenviar_firma(
     return {"message": f"Correo reenviado a {len(destinatarios)} usuario(s)"}
 
 
+@router.post("/{id}/firmar-simple")
+async def firmar_asignacion_simple(
+    id: str,
+    body: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    from models.usuario import UsuarioModel
+    import json
+    from datetime import datetime
+    
+    usuario_id = body.get("usuario_id")
+    firma_base64 = body.get("firma")
+    
+    print(f"[FIRMAR] Asignación ID: {id}")
+    print(f"[FIRMAR] Usuario ID: {usuario_id}")
+    print(f"[FIRMAR] Firma recibida (primeros 100 chars): {firma_base64[:100] if firma_base64 else 'None'}")
+    
+    # Validaciones
+    if not usuario_id:
+        raise HTTPException(400, detail="usuario_id es requerido")
+    if not firma_base64:
+        raise HTTPException(400, detail="firma es requerida")
+    
+    # Buscar asignación
+    asignacion = await AsignacionModel.find_by_id(id)
+    if not asignacion:
+        raise HTTPException(404, detail="Asignación no encontrada")
+    
+    # Buscar usuario
+    usuario = await UsuarioModel.find_by_id(usuario_id)
+    if not usuario:
+        raise HTTPException(404, detail="Usuario no encontrado")
+    
+    nombre_usuario = usuario.get("nombre", "Usuario")
+    
+    # Crear objeto de firma
+    nueva_firma = {
+        "user_id": usuario_id,
+        "nombre": nombre_usuario,
+        "signature": firma_base64,
+        "fecha": datetime.now().isoformat()
+    }
+    
+    # Obtener firmas existentes
+    firmas_existentes = asignacion.get("firmas")
+    firmas = []
+    if firmas_existentes:
+        try:
+            if isinstance(firmas_existentes, str):
+                firmas = json.loads(firmas_existentes)
+            elif isinstance(firmas_existentes, bytes):
+                firmas = json.loads(firmas_existentes.decode('utf-8'))
+            else:
+                firmas = firmas_existentes
+        except Exception as e:
+            print(f"[FIRMAR] Error parseando firmas existentes: {e}")
+            firmas = []
+    
+    # Verificar si ya firmó
+    for f in firmas:
+        if f.get("user_id") == usuario_id:
+            raise HTTPException(400, detail="Este usuario ya ha firmado")
+    
+    # Agregar firma
+    firmas.append(nueva_firma)
+    
+    # Guardar como string JSON
+    firmas_json = json.dumps(firmas, ensure_ascii=False)
+    print(f"[FIRMAR] Guardando JSON: {firmas_json[:200]}")
+    
+    # Actualizar asignación
+    await AsignacionModel.update(id, {"firmas": firmas_json})
+    
+    # Verificar que se guardó
+    asignacion_verificar = await AsignacionModel.find_by_id(id)
+    print(f"[FIRMAR] Verificación - Firmas guardadas: {asignacion_verificar.get('firmas')}")
+    
+    # ========== REGENERAR EL ACTA CON LA NUEVA FIRMA ==========
+    try:
+        from utils.accesorios import normalizar_accesorios_entregados
+        from routes.asignaciones import _generar_y_registrar_acta
+        
+        # Obtener la asignación actualizada (ya tiene la firma)
+        asignacion_actualizada = await AsignacionModel.find_by_id(id)
+        
+        cargado_por = current_user.get("nombre") or current_user.get("username") or "Sistema"
+        accesorios_textos = normalizar_accesorios_entregados(asignacion_actualizada.get("accesorios_entregados"))
+        
+        await _generar_y_registrar_acta(
+            asignacion_actualizada,
+            accesorios_entregados=accesorios_textos,
+            cargado_por=cargado_por,
+            regenerar=True
+        )
+        print("[FIRMAR] Acta regenerada con la firma incluida")
+    except Exception as e:
+        print(f"[FIRMAR] Error regenerando acta: {e}")
+        # No lanzamos excepción para que la firma quede guardada aunque falle la regeneración
+    
+    return {
+        "message": "Firma registrada correctamente",
+        "firmante": nombre_usuario,
+        "total_firmas": len(firmas)
+    }

@@ -578,6 +578,27 @@ export function AsignacionesPage() {
                           >
                             Firmar
                           </Button>
+                                <Button 
+        variant="outline" 
+        size="sm" 
+        icon={<RotateCcw size={12} />} 
+        onClick={async () => {
+          if (confirm(`¿Devolver completamente la asignación? Se marcará como devuelta y el equipo principal y todos los accesorios quedarán disponibles.`)) {
+            try {
+              await asignacionesApi.devolucion(a.id);
+              await ctrl.refetch();
+              if (ctrl.previewUrl) {
+                ctrl.cerrarPreview();
+              }
+              alert('Devolución completada exitosamente');
+            } catch (err) {
+              alert(err instanceof Error ? err.message : 'Error al devolver');
+            }
+          }
+        }}
+      >
+        Devolver todo
+      </Button>
                         </div>
                       )}
                     </Td>
