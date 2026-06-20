@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-resend.api_key = os.environ.get("RESEND_API_KEY", "re_QPFgHJSp_3rtzvarK7XgbuL2H4TmcdvTv")
+resend.api_key = os.environ.get("RESEND_API_KEY", "re_PfPu4qwt_Ln1L1spqYC3969aG8b5CwSHc")
 DEFAULT_FROM = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
 
 async def send_email(to: str, subject: str, html: str, from_email: Optional[str] = None) -> bool:

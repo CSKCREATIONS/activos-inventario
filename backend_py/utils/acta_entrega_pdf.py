@@ -209,27 +209,18 @@ def generar_acta_entrega_pdf(
     if fecha_txt:
         _text(oc, fecha_txt, POS["fecha"][0], POS["fecha"][1], 120, 12, size=9, align="center")
 
-    # ================== DATOS DE QUIEN RECIBE EL EQUIPO (todos los usuarios) ==================
+    # ================== DATOS DE QUIEN RECIBE EL EQUIPO ==================
     todos_usuarios = asignacion.get("todos_usuarios_completos", [])
     if not todos_usuarios:
-        # Fallback si no está la lista enriquecida
         nombre = asignacion.get("usuario_nombre") or ""
         cargo = asignacion.get("cargo") or ""
         todos_usuarios = [{"nombre": nombre, "cargo": cargo}]
-    else:
-        # Asegurar que el primer elemento sea el principal (ya lo es)
-        pass
 
-    # Construir un solo string para nombres y otro para cargos
     nombres_str = " - ".join([u.get("nombre", "") for u in todos_usuarios])
     cargos_str = " - ".join([u.get("cargo", "") for u in todos_usuarios])
 
-    # Dibujar en las posiciones fijas, permitiendo múltiples líneas si es necesario
-    # Altura suficiente para hasta 2 líneas (ajustable)
     _text(oc, nombres_str, POS["nombre"][0], POS["nombre"][1], 350, 14, size=9, bold=False, align="center")
     _text(oc, cargos_str, POS["cargo"][0], POS["cargo"][1], 350, 14, size=9, bold=False, align="center")
-
-    # No se necesita sección adicional de responsables
 
     # ================== EQUIPOS ==================
     per_rows = ["equipo", "monitor", "teclado", "mouse", "parlantes", "lector_codigo_de_barras", "impresora"]
@@ -237,22 +228,17 @@ def generar_acta_entrega_pdf(
     def pick(*keys):
         for kk in keys:
             v = asignacion.get(kk)
-            if v:
+            if v is not None and str(v).strip():
                 return str(v)
         return ""
 
-    # Ajuste de coordenadas: alinear todas las referencias en la misma columna X
-    # (por si alguna tenía valor diferente)
     for row_name in per_rows:
         qty = pick(f'{row_name}_cantidad')
         if row_name == "equipo":
             qty = qty or "1"
         if row_name == "equipo":
             ref = pick('modelo', 'marca')
-        if row_name == "equipo":
-            ref = pick('modelo', 'marca')
         else:
-            # Para accesorios, obtener marca y modelo por separado y unirlos
             marca = asignacion.get(f"{row_name}_marca", "")
             modelo = asignacion.get(f"{row_name}_modelo", "")
             if marca and modelo:
@@ -269,15 +255,13 @@ def generar_acta_entrega_pdf(
         else:
             activo = pick(f"{row_name}_placa", f"{row_name}_serial", f"{row_name}_activo")
         size_ref = 7 if row_name == "lector_codigo_de_barras" else 8
-        # Las coordenadas X deben ser consistentes para todas las filas
         x_qty = POS[f"{row_name}_qty"][0]
         x_ref = POS[f"{row_name}_ref"][0]
         x_activo = POS[f"{row_name}_activo"][0]
-        y = POS[f"{row_name}_qty"][1]  # asumimos misma Y para cada fila
+        y = POS[f"{row_name}_qty"][1]
         _text(oc, qty, x_qty, y, 35, 12, size=8, align="center")
         _text(oc, ref, x_ref, y, 120, 12, size=size_ref, align="left")
         _text(oc, activo, x_activo, y, 100, 12, size=8, align="left")
-    # ================== ACCESORIOS ==================
 
     # ================== OBSERVACIONES ==================
     obs = str(asignacion.get("observaciones") or "")
@@ -301,11 +285,9 @@ def generar_acta_entrega_pdf(
     firma_y_multi = 310   # para varias firmas (más alta)
 
     firmas = asignacion.get("firmas", [])
-    
     if isinstance(firmas, str):
         try:
             firmas = json.loads(firmas)
-            
         except:
             firmas = []
 
@@ -319,58 +301,27 @@ def generar_acta_entrega_pdf(
         }]
 
     num_firmas = len(firmas)
-    # Elegir Y inicial según cantidad
     if num_firmas == 1:
         firma_y = firma_y_single
     else:
         firma_y = firma_y_multi
 
-
     if firmas:
         for i, firma in enumerate(firmas):
-            
-            print("TIENE SIGNATURE:", bool(firma.get("signature")))
             y_actual = firma_y - i * separacion
             if y_actual < 50:
                 break
             oc.setFont("Helvetica-Bold", 9)
             oc.drawString(firma_x, y_actual + 15, f"Firma de: {firma.get('nombre', 'Usuario')}")
             firma_data = firma.get("signature", "")
-
-            print("TIPO:", type(firma_data))
-            print("VALOR:", str(firma_data)[:100])
-
-            if firma_data:
+            if firma_data and firma_data.startswith("data:image"):
                 try:
-
-                    if "base64," in firma_data:
-                        firma_data = firma_data.split(",", 1)[1]
-
-                    
-
-                    img_data = base64.b64decode(firma_data)
-
-                    print("BYTES:", len(img_data))
-
-                    with open("firma_debug.png", "wb") as f:
-                        f.write(img_data)
-
+                    img_data = base64.b64decode(firma_data.split(",")[1])
                     img = ImageReader(BytesIO(img_data))
-
-                    oc.drawImage(
-                        img,
-                        firma_x,
-                        y_actual,
-                        width=120,
-                        height=40,
-                        preserveAspectRatio=True,
-                        mask="auto"
-                    )
-
-                    
-
+                    oc.drawImage(img, firma_x, y_actual, width=100, height=40, preserveAspectRatio=True, mask='auto')
                 except Exception as e:
-                    print("ERROR:", e)
+                    oc.setFont("Helvetica", 8)
+                    oc.drawString(firma_x, y_actual, f"(Error al cargar firma: {str(e)[:20]})")
             else:
                 oc.drawString(firma_x, y_actual, "")
     else:
@@ -384,16 +335,13 @@ def generar_acta_entrega_pdf(
 
     overlay.seek(0)
     overlay_pdf = PdfReader(overlay)
-    
-    
+
     writer = PdfWriter()
-    
-    for i, page in enumerate(tpl.pages):
-        # Aplicar el overlay a cada página (usando la primera página del overlay)
+    for page in tpl.pages:
         if overlay_pdf.pages:
             page.merge_page(overlay_pdf.pages[0])
         writer.add_page(page)
-    
+
     out = io.BytesIO()
     writer.write(out)
     return out.getvalue()
